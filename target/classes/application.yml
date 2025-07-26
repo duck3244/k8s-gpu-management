@@ -1,0 +1,248 @@
+# Kubernetes 리소스 모니터링 애플리케이션 설정
+server:
+  port: 8080
+  servlet:
+    context-path: /k8s-monitor
+  compression:
+    enabled: true
+    mime-types: text/html,text/xml,text/plain,text/css,text/javascript,application/javascript,application/json
+    min-response-size: 1024
+
+spring:
+  application:
+    name: k8s-resource-monitor
+  
+  # 프로파일 설정
+  profiles:
+    active: development
+    
+  # 데이터베이스 설정
+  datasource:
+    url: jdbc:h2:mem:k8s_monitor
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: password
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 20000
+      idle-timeout: 300000
+      max-lifetime: 1200000
+  
+  # JPA 설정
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: create-drop
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        use_sql_comments: true
+        generate_statistics: true
+  
+  # H2 콘솔 설정
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+      settings:
+        trace: false
+        web-allow-others: false
+  
+  # Jackson 설정
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+      indent-output: true
+    time-zone: Asia/Seoul
+    date-format: yyyy-MM-dd HH:mm:ss
+
+# Spring Boot Actuator 설정
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,env,configprops,beans,mappings
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+    metrics:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+      environment: ${spring.profiles.active}
+
+# 로깅 설정
+logging:
+  level:
+    root: INFO
+    com.k8s.monitor: DEBUG
+    io.kubernetes.client: WARN
+    org.springframework.web: INFO
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/k8s-monitor.log
+    max-size: 10MB
+    max-history: 30
+
+# Kubernetes 모니터링 설정
+k8s:
+  monitor:
+    # 메트릭 수집 간격 (초)
+    collection-interval: 30
+    
+    # 메트릭 보존 기간 (일)
+    retention-days: 7
+    
+    # 모니터링할 네임스페이스 목록
+    namespaces:
+      - default
+      - model-serving
+      - vllm
+      - sglang
+    
+    # 알람 임계값 설정
+    alerts:
+      cpu-threshold: 80.0
+      memory-threshold: 80.0
+      gpu-threshold: 80.0
+      disk-threshold: 85.0
+    
+    # 메트릭 서버 설정
+    metrics:
+      enabled: true
+      endpoint: http://metrics-server.kube-system.svc.cluster.local
+      timeout: 10s
+      retry-attempts: 3
+    
+    # 캐시 설정
+    cache:
+      enabled: true
+      ttl-seconds: 30
+      max-size: 1000
+    
+    # 배치 처리 설정
+    batch:
+      enabled: false
+      size: 100
+      parallel: true
+
+# 프로파일별 설정
+---
+spring:
+  config:
+    activate:
+      on-profile: development
+      
+logging:
+  level:
+    com.k8s.monitor: DEBUG
+    org.springframework: DEBUG
+
+k8s:
+  monitor:
+    collection-interval: 10
+    cache:
+      ttl-seconds: 10
+
+---
+spring:
+  config:
+    activate:
+      on-profile: production
+      
+  datasource:
+    url: jdbc:postgresql://postgres:5432/k8s_monitor
+    driver-class-name: org.postgresql.Driver
+    username: ${DB_USERNAME:k8s_monitor}
+    password: ${DB_PASSWORD:password}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 10
+  
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+
+logging:
+  level:
+    root: WARN
+    com.k8s.monitor: INFO
+  file:
+    name: /var/log/k8s-monitor/application.log
+
+k8s:
+  monitor:
+    collection-interval: 30
+    retention-days: 30
+    batch:
+      enabled: true
+      size: 500
+
+---
+spring:
+  config:
+    activate:
+      on-profile: kubernetes
+      
+logging:
+  level:
+    root: INFO
+    com.k8s.monitor: INFO
+
+# Kubernetes 환경에서의 추가 설정
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,prometheus
+
+k8s:
+  monitor:
+    # 클러스터 내부에서 실행시 서비스 디스커버리 사용
+    metrics:
+      endpoint: http://metrics-server.kube-system.svc.cluster.local:443
+    
+    # 대용량 클러스터 대응
+    batch:
+      enabled: true
+      size: 1000
+      parallel: true
+    
+    # 더 긴 보존 기간
+    retention-days: 30
+
+---
+spring:
+  config:
+    activate:
+      on-profile: test
+      
+  datasource:
+    url: jdbc:h2:mem:testdb
+    
+logging:
+  level:
+    org.springframework.test: DEBUG
+    com.k8s.monitor: DEBUG
+    
+k8s:
+  monitor:
+    collection-interval: 5
+    cache:
+      enabled: false
