@@ -4,7 +4,7 @@ import com.k8s.monitor.dto.NodeResourceInfo;
 import com.k8s.monitor.dto.PodResourceInfo;
 import com.k8s.monitor.dto.ResourceUsageResponse;
 import com.k8s.monitor.model.ResourceMetrics;
-import com.k8s.monitor.repository.MetricsRepository;
+import com.k8s.monitor.entity.ResourceMetrics;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
