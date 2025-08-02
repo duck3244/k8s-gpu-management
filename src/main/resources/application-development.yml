@@ -1,0 +1,36 @@
+# application-development.yml - 개발 환경 설정
+spring:
+  config:
+    activate:
+      on-profile: development
+
+  # H2 데이터베이스 (개발용)
+  datasource:
+    url: jdbc:h2:mem:gpu_management_dev
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: password
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+gpu:
+  management:
+    metrics:
+      collection-interval: 10s
+      nvidia-smi:
+        enabled: false # 개발 환경에서는 모의 데이터 사용
+    allocation:
+      default-duration-hours: 1 # 개발 환경에서는 짧은 기간
+
+logging:
+  level:
+    com.k8s.monitor: DEBUG
+    org.hibernate.SQL: DEBUG

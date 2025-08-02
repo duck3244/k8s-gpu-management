@@ -1,0 +1,15 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: gpu-monitor
+  namespace: k8s-monitoring
+  labels:
+    app: k8s-gpu-monitor
+spec:
+  selector:
+    matchLabels:
+      app: k8s-gpu-monitor
+  endpoints:
+  - port: management
+    path: /actuator/prometheus
+    interval: 30s

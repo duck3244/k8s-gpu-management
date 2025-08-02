@@ -1,0 +1,35 @@
+%% 5. 유스케이스 다이어그램 - 주요 기능
+graph LR
+    subgraph "GPU Management System"
+        UC1((GPU 장비 등록))
+        UC2((MIG 인스턴스 생성))
+        UC3((리소스 할당))
+        UC4((사용량 모니터링))
+        UC5((비용 분석))
+        UC6((알람 관리))
+        UC7((성능 최적화))
+    end
+    
+    subgraph "Actors"
+        Admin[시스템 관리자]
+        DevOps[DevOps 엔지니어]
+        Developer[개발자]
+        K8sScheduler[K8s Scheduler]
+        System[시스템]
+    end
+    
+    %% 관계
+    Admin --> UC1
+    Admin --> UC2
+    Admin --> UC6
+    
+    DevOps --> UC4
+    DevOps --> UC5
+    DevOps --> UC7
+    
+    Developer --> UC3
+    
+    K8sScheduler --> UC3
+    
+    System --> UC4
+    System --> UC6

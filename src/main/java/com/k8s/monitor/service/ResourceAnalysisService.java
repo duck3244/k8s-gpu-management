@@ -285,7 +285,7 @@ public class ResourceAnalysisService {
      */
     public Map<String, Object> getNamespaceResourceUsage() {
         Map<String, Object> namespaceUsage = new HashMap<>();
-        LocalDateTime oneHourAgo = LocalDateTime.now().minusHour();
+        LocalDateTime oneHourAgo = LocalDateTime.now().minusHours(1);
         
         try {
             List<ResourceMetrics> podMetrics = metricsRepository.findMetricsByTypeAndTimeRange(
@@ -655,6 +655,10 @@ public class ResourceAnalysisService {
         }
         
         String numericValue = value.replaceAll("[^0-9.]", "");
-        return Double.parseDouble(numericValue);
+        try {
+            return Double.parseDouble(numericValue);
+        } catch (NumberFormatException e) {
+            return 0.0;
+        }
     }
 }

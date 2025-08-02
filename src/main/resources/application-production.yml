@@ -1,0 +1,38 @@
+# application-production.yml - 운영 환경 설정
+spring:
+  config:
+    activate:
+      on-profile: production
+
+  datasource:
+    hikari:
+      maximum-pool-size: 50
+      minimum-idle: 20
+
+gpu:
+  management:
+    metrics:
+      collection-interval: 30s
+      retention-days: 90
+      batch-size: 500
+    allocation:
+      auto-expire: true
+      default-duration-hours: 24
+    alerts:
+      enabled: true
+      notification:
+        email:
+          enabled: true
+          recipients:
+            - gpu-admin@company.com
+            - ops-team@company.com
+        slack:
+          enabled: true
+          webhook-url: "${SLACK_WEBHOOK_URL}"
+
+logging:
+  level:
+    root: WARN
+    com.k8s.monitor: INFO
+  file:
+    name: /var/log/k8s-monitor/gpu-management.log

@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gpu-monitor-config
+  namespace: k8s-monitoring
+data:
+  application.yml: |
+    server:
+      port: 8080
+    management:
+      server:
+        port: 8081
+    
+    spring:
+      profiles:
+        active: production,gpu-management

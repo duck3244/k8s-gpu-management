@@ -1,0 +1,24 @@
+%% 6. 활동 다이어그램 - MIG 인스턴스 생성 프로세스
+flowchart TD
+    Start([MIG 생성 요청]) --> Check{GPU가 MIG 지원?}
+    
+    Check -->|No| Error1[에러: MIG 미지원]
+    Check -->|Yes| CheckStatus{GPU 상태 확인}
+    
+    CheckStatus -->|사용중| Error2[에러: GPU 사용중]
+    CheckStatus -->|사용가능| DisableCurrent[기존 MIG 비활성화]
+    
+    DisableCurrent --> EnableMIG[MIG 모드 활성화]
+    EnableMIG --> CreateProfiles[프로필별 인스턴스 생성]
+    
+    CreateProfiles --> Loop{더 생성할 프로필?}
+    Loop -->|Yes| CreateInstance[MIG 인스턴스 생성]
+    CreateInstance --> SaveDB[데이터베이스 저장]
+    SaveDB --> Loop
+    
+    Loop -->|No| UpdateStatus[GPU 상태 업데이트]
+    UpdateStatus --> Success[성공 응답]
+    
+    Error1 --> End([종료])
+    Error2 --> End
+    Success --> End

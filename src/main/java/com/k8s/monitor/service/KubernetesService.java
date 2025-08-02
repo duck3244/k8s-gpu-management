@@ -42,32 +42,32 @@ public class KubernetesService {
             
             if (namespace != null && !namespace.isEmpty()) {
                 podList = coreV1Api.listNamespacedPod(
-                    namespace, // namespace
-                    null,      // pretty
-                    null,      // allowWatchBookmarks
-                    null,      // _continue
-                    null,      // fieldSelector
+                    namespace,     // namespace
+                    null,          // pretty
+                    null,          // allowWatchBookmarks
+                    null,          // _continue
+                    null,          // fieldSelector
                     labelSelector, // labelSelector
-                    null,      // limit
-                    null,      // resourceVersion
-                    null,      // resourceVersionMatch
-                    null,      // sendInitialEvents
-                    null,      // timeoutSeconds
-                    null       // watch
+                    null,          // limit
+                    null,          // resourceVersion
+                    null,          // resourceVersionMatch
+                    null,          // sendInitialEvents
+                    null,          // timeoutSeconds
+                    null           // watch
                 );
             } else {
                 podList = coreV1Api.listPodForAllNamespaces(
-                    null,      // allowWatchBookmarks
-                    null,      // _continue
-                    null,      // fieldSelector
+                    null,          // allowWatchBookmarks
+                    null,          // _continue
+                    null,          // fieldSelector
                     labelSelector, // labelSelector
-                    null,      // limit
-                    null,      // pretty
-                    null,      // resourceVersion
-                    null,      // resourceVersionMatch
-                    null,      // sendInitialEvents
-                    null,      // timeoutSeconds
-                    null       // watch
+                    null,          // limit
+                    null,          // pretty
+                    null,          // resourceVersion
+                    null,          // resourceVersionMatch
+                    null,          // sendInitialEvents
+                    null,          // timeoutSeconds
+                    null           // watch
                 );
             }
 
@@ -257,16 +257,16 @@ public class KubernetesService {
         // 현재 사용량 조회
         Map<String, String> currentUsage = metricsService.getNodeMetrics(metadata.getName());
         
-        // 용량 정보 (Quantity를 String으로 변환)
-        String cpuCapacity = getQuantityValue(capacity, "cpu");
-        String memoryCapacity = getQuantityValue(capacity, "memory");
-        String gpuCapacity = getQuantityValue(capacity, "nvidia.com/gpu");
-        String storageCapacity = getQuantityValue(capacity, "ephemeral-storage");
+        // 용량 정보 (Quantity를 String으로 변환하는 헬퍼 메서드 사용)
+        String cpuCapacity = convertQuantityToString(capacity, "cpu");
+        String memoryCapacity = convertQuantityToString(capacity, "memory");
+        String gpuCapacity = convertQuantityToString(capacity, "nvidia.com/gpu");
+        String storageCapacity = convertQuantityToString(capacity, "ephemeral-storage");
         
-        String cpuAllocatable = getQuantityValue(allocatable, "cpu");
-        String memoryAllocatable = getQuantityValue(allocatable, "memory");
-        String gpuAllocatable = getQuantityValue(allocatable, "nvidia.com/gpu");
-        String storageAllocatable = getQuantityValue(allocatable, "ephemeral-storage");
+        String cpuAllocatable = convertQuantityToString(allocatable, "cpu");
+        String memoryAllocatable = convertQuantityToString(allocatable, "memory");
+        String gpuAllocatable = convertQuantityToString(allocatable, "nvidia.com/gpu");
+        String storageAllocatable = convertQuantityToString(allocatable, "ephemeral-storage");
         
         // 사용량 정보
         String cpuUsage = currentUsage.getOrDefault("cpu", "0");
@@ -338,19 +338,19 @@ public class KubernetesService {
                 if (resources != null) {
                     if (resources.getRequests() != null) {
                         requirements.cpuRequest = addResourceValues(requirements.cpuRequest, 
-                            getQuantityValue(resources.getRequests(), "cpu"));
+                            convertQuantityToString(resources.getRequests(), "cpu"));
                         requirements.memoryRequest = addResourceValues(requirements.memoryRequest, 
-                            getQuantityValue(resources.getRequests(), "memory"));
+                            convertQuantityToString(resources.getRequests(), "memory"));
                         requirements.gpuRequest = addResourceValues(requirements.gpuRequest, 
-                            getQuantityValue(resources.getRequests(), "nvidia.com/gpu"));
+                            convertQuantityToString(resources.getRequests(), "nvidia.com/gpu"));
                     }
                     if (resources.getLimits() != null) {
                         requirements.cpuLimit = addResourceValues(requirements.cpuLimit, 
-                            getQuantityValue(resources.getLimits(), "cpu"));
+                            convertQuantityToString(resources.getLimits(), "cpu"));
                         requirements.memoryLimit = addResourceValues(requirements.memoryLimit, 
-                            getQuantityValue(resources.getLimits(), "memory"));
+                            convertQuantityToString(resources.getLimits(), "memory"));
                         requirements.gpuLimit = addResourceValues(requirements.gpuLimit, 
-                            getQuantityValue(resources.getLimits(), "nvidia.com/gpu"));
+                            convertQuantityToString(resources.getLimits(), "nvidia.com/gpu"));
                     }
                 }
             }
@@ -404,9 +404,9 @@ public class KubernetesService {
     // Utility methods
     
     /**
-     * Quantity 객체에서 String 값 추출
+     * Quantity 객체에서 String 값 추출하는 수정된 메서드
      */
-    private String getQuantityValue(Map<String, Quantity> resources, String key) {
+    private String convertQuantityToString(Map<String, Quantity> resources, String key) {
         if (resources == null) {
             return "0";
         }

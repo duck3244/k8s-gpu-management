@@ -1,0 +1,36 @@
+classDiagram
+    class GpuModel {
+        modelId
+        modelName
+        architecture
+        memoryGb
+        migSupport
+    }
+
+    class GpuDevice {
+        deviceId
+        gpuUuid
+        status
+        temperature
+        powerDraw
+    }
+
+    class MigInstance {
+        migId
+        allocated
+        memoryGb
+        profileName
+    }
+
+    class GpuAllocation {
+        allocationId
+        namespace
+        podName
+        workloadType
+        cost
+    }
+
+    GpuModel --> GpuDevice
+    GpuDevice --> MigInstance
+    GpuDevice --> GpuAllocation
+    MigInstance --> GpuAllocation

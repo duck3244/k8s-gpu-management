@@ -1,0 +1,34 @@
+%% 4. 상태 다이어그램 - GPU 장비 생명주기
+stateDiagram-v2
+    [*] --> Discovered : 장비 발견
+    
+    Discovered --> Registering : 등록 시작
+    Registering --> Active : 등록 완료
+    Registering --> Failed : 등록 실패
+    
+    Active --> MigEnabled : MIG 활성화
+    MigEnabled --> Active : MIG 비활성화
+    
+    Active --> Allocated : 할당됨
+    MigEnabled --> Allocated : MIG 인스턴스 할당
+    
+    Allocated --> Active : 할당 해제
+    Allocated --> MigEnabled : MIG 할당 해제
+    
+    Active --> Maintenance : 유지보수
+    MigEnabled --> Maintenance : 유지보수
+    Maintenance --> Active : 유지보수 완료
+    Maintenance --> MigEnabled : 유지보수 완료
+    
+    Active --> Overheating : 과열 감지
+    MigEnabled --> Overheating : 과열 감지
+    Allocated --> Overheating : 과열 감지
+    Overheating --> Active : 온도 정상화
+    Overheating --> MigEnabled : 온도 정상화
+    Overheating --> Failed : 하드웨어 실패
+    
+    Active --> Failed : 하드웨어 실패
+    MigEnabled --> Failed : 하드웨어 실패
+    Allocated --> Failed : 하드웨어 실패
+    
+    Failed --> [*] : 장비 제거

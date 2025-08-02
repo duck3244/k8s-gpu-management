@@ -1,0 +1,157 @@
+# application-gpu.yml - GPU 관리 전용 설정
+---
+spring:
+  config:
+    activate:
+      on-profile: gpu-management
+
+  # Oracle Database 설정
+  datasource:
+    url: jdbc:oracle:thin:@${DB_HOST:localhost}:${DB_PORT:1521}:${DB_SERVICE:ORCL}
+    driver-class-name: oracle.jdbc.OracleDriver
+    username: ${DB_USERNAME:gpu_admin}
+    password: ${DB_PASSWORD:password}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 10
+      connection-timeout: 20000
+      idle-timeout: 300000
+      max-lifetime: 1200000
+      pool-name: GpuManagementPool
+
+  # JPA 설정
+  jpa:
+    database-platform: org.hibernate.dialect.Oracle12cDialect
+    hibernate:
+      ddl-auto: ${DDL_AUTO:validate}
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+    show-sql: ${SHOW_SQL:false}
+    properties:
+      hibernate:
+        format_sql: true
+        use_sql_comments: true
+        generate_statistics: true
+        cache:
+          use_second_level_cache: true
+          region:
+            factory_class: org.hibernate.cache.jcache.JCacheRegionFactory
+
+# GPU 관리 전용 설정
+gpu:
+  management:
+    enabled: true
+    
+    # 지원 GPU 모델 목록
+    supported-models:
+      - GTX1080
+      - GTX1080TI
+      - TITANXP
+      - RTX2080
+      - RTX2080TI
+      - RTX3080
+      - RTX3090
+      - RTX4080
+      - RTX4090
+      - V100_16GB
+      - V100_32GB
+      - A100_40GB
+      - A100_80GB
+      - H100_80GB
+    
+    # MIG 관리 설정
+    mig:
+      enabled: true
+      supported-models:
+        - A100_40GB
+        - A100_80GB
+        - H100_80GB
+      auto-cleanup: true
+      cleanup-interval: "0 0 2 * * *" # 매일 새벽 2시
+    
+    # 메트릭 수집 설정
+    metrics:
+      collection-interval: 30s
+      retention-days: 30
+      batch-size: 100
+      nvidia-smi:
+        enabled: true
+        path: "/usr/bin/nvidia-smi"
+        timeout: 10s
+      nvml:
+        enabled: false
+        library-path: "/usr/local/cuda/lib64/libnvidia-ml.so"
+    
+    # 할당 관리 설정
+    allocation:
+      auto-expire: true
+      expire-check-interval: 5m
+      default-duration-hours: 24
+      max-duration-hours: 168 # 7일
+      cost-tracking: true
+      
+    # 비용 계산 설정
+    cost:
+      enabled: true
+      currency: "USD"
+      default-rates:
+        GTX1080: 0.5
+        RTX4090: 2.0
+        A100_80GB: 6.0
+        H100_80GB: 8.0
+      mig-discount: 0.7 # MIG 인스턴스는 30% 할인
+    
+    # 알람 설정
+    alerts:
+      enabled: true
+      temperature-threshold: 85.0
+      utilization-threshold: 90.0
+      memory-threshold: 95.0
+      power-threshold: 400.0
+      notification:
+        email:
+          enabled: false
+          recipients: []
+        slack:
+          enabled: false
+          webhook-url: ""
+        webhook:
+          enabled: false
+          url: ""
+    
+    # 최적화 설정
+    optimization:
+      enabled: true
+      auto-optimization: false
+      optimization-interval: "0 0 3 * * *" # 매일 새벽 3시
+      strategies:
+        - UNUSED_MIG_CLEANUP
+        - OVERPROVISIONED_DETECTION
+        - COST_OPTIMIZATION
+        - WORKLOAD_BALANCING
+
+# 로깅 설정
+logging:
+  level:
+    com.k8s.monitor.service.gpu: DEBUG
+    com.k8s.monitor.controller.gpu: DEBUG
+    org.hibernate.SQL: ${SQL_LOG_LEVEL:WARN}
+    org.hibernate.type.descriptor.sql.BasicBinder: ${SQL_BIND_LOG_LEVEL:WARN}
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [GPU-MGMT] %logger{36} - %msg%n"
+
+# 모니터링 설정
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,gpu-health,gpu-metrics
+  endpoint:
+    gpu-health:
+      enabled: true
+    gpu-metrics:
+      enabled: true
+  metrics:
+    tags:
+      service: gpu-management
+      cluster: ${CLUSTER_NAME:default}

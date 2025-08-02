@@ -1,0 +1,44 @@
+%% 3. 컴포넌트 다이어그램 - 시스템 아키텍처
+graph TB
+    subgraph "Presentation Layer"
+        WebUI[Web Dashboard]
+        RestAPI[REST API]
+    end
+    
+    subgraph "Service Layer"
+        GpuDeviceService[GPU Device Service]
+        MigService[MIG Management Service]
+        AllocationService[Allocation Service]
+        MetricsService[Metrics Collection Service]
+    end
+    
+    subgraph "Data Layer"
+        Repository[JPA Repositories]
+        Oracle[(Oracle Database)]
+        Cache[Redis Cache]
+    end
+    
+    subgraph "External Systems"
+        K8sAPI[Kubernetes API]
+        MetricsServer[Metrics Server]
+        NvidiaDriver[NVIDIA Driver]
+    end
+    
+    %% 연결
+    WebUI --> RestAPI
+    RestAPI --> GpuDeviceService
+    RestAPI --> MigService
+    RestAPI --> AllocationService
+    
+    GpuDeviceService --> Repository
+    MigService --> Repository
+    AllocationService --> Repository
+    MetricsService --> Repository
+    
+    Repository --> Oracle
+    GpuDeviceService --> Cache
+    MetricsService --> Cache
+    
+    MetricsService --> K8sAPI
+    MetricsService --> MetricsServer
+    GpuDeviceService --> NvidiaDriver

@@ -1,0 +1,31 @@
+%% 2. 시퀀스 다이어그램 - GPU 할당 프로세스
+sequenceDiagram
+    participant Client as K8s Scheduler
+    participant Controller as GpuController
+    participant Service as AllocationService
+    participant MigService as MigService
+    participant DB as Database
+    participant GPU as GPU Device
+
+    Note over Client, GPU: GPU 리소스 할당 프로세스
+
+    Client->>Controller: POST /api/v1/gpu/allocations
+    Controller->>Service: allocateGpuResource(request)
+    
+    alt MIG 인스턴스 요청
+        Service->>DB: findAvailableMigInstance()
+        DB-->>Service: MigInstance
+        Service->>MigService: allocateMigInstance(migId)
+        MigService->>GPU: enableMigPartition()
+        GPU-->>MigService: success
+    else 전체 GPU 요청
+        Service->>DB: findAvailableGpuDevice()
+        DB-->>Service: GpuDevice
+        Service->>GPU: allocateFullGpu()
+        GPU-->>Service: success
+    end
+    
+    Service->>DB: saveAllocation(allocation)
+    DB-->>Service: saved
+    Service-->>Controller: AllocationInfo
+    Controller-->>Client: 201 Created

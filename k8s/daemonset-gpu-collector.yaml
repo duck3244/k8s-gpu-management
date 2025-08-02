@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: gpu-metrics-collector
+  namespace: k8s-monitoring
+  labels:
+    app: gpu-metrics-collector
+spec:
+  selector:
+    matchLabels:
+      app: gpu-metrics-collector
+  template:
+    metadata:
+      labels:
+        app: gpu-metrics-collector
+    spec:
+      hostPID: true
+      hostIPC: true
+      containers:
+      - name: gpu-collector
+        image: nvidia/cuda:11.8-runtime-ubuntu20.04
+        command: ["/bin/sh"]
+        args:
+        - -c
+        - |
+          while true; do
+            if command -v nvidia-smi >/dev/null 2>&1; then
+              nvidia-smi --query-gpu=index,name,uuid,temperature.gpu,power.draw,utilization.gpu,memory.used,memory.total --format=csv,noheader,nounits > /shared/gpu-metrics.csv
+              curl -X POST http://k8s-gpu-monitor/api/v1/gpu/metrics/collect || true
+            fi
+            sleep 30
+          done
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: shared-data
+          mountPath: /shared
+        - name: dev
+          mountPath: /dev
+        resources:
+          limits:
+            nvidia.com/gpu: 0  # 메트릭 수집만 하므로 GPU 할당 불필요
+      volumes:
+      - name: shared-data
+        hostPath:
+          path: /tmp/gpu-metrics
+      - name: dev
+        hostPath:
+          path: /dev
+      nodeSelector:
+        accelerator: nvidia-gpu
+      tolerations:
+      - operator: Exists
