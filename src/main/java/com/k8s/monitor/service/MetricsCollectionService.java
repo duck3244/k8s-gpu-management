@@ -1,9 +1,10 @@
 package com.k8s.monitor.service;
 
-import com.k8s.monitor.dto.NodeResourceInfo;
-import com.k8s.monitor.dto.PodResourceInfo;
-import com.k8s.monitor.model.ResourceMetrics;
+import com.k8s.monitor.entity.ResourceMetrics;
 import com.k8s.monitor.repository.MetricsRepository;
+import io.kubernetes.client.openapi.ApiException;
+import io.kubernetes.client.openapi.apis.CoreV1Api;
+import io.kubernetes.client.custom.Quantity;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -11,431 +12,463 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
 /**
- * 주기적인 메트릭 수집 및 저장을 담당하는 서비스
- * 스케줄링을 통해 자동으로 리소스 사용량을 수집하고 데이터베이스에 저장
+ * Kubernetes 리소스 메트릭 수집 서비스 (수정된 버전)
+ * Pod, Node, Container 등의 리소스 메트릭을 주기적으로 수집
  */
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class MetricsCollectionService {
     
-    private final KubernetesService kubernetesService;
     private final MetricsRepository metricsRepository;
+    private final CoreV1Api coreV1Api;
     private final ResourceMetricsService resourceMetricsService;
 
     /**
-     * 메인 메트릭 수집 스케줄러 (30초마다 실행)
+     * 메트릭 수집 스케줄러 (5분마다 실행)
      */
-    @Scheduled(fixedRate = 30000) // 30초
+    @Scheduled(fixedRate = 300000) // 5분마다 실행
+    @Transactional
     public void collectMetrics() {
-        log.debug("Starting scheduled metrics collection...");
-        
         try {
-            collectPodMetrics();
-            collectNodeMetrics();
+            log.debug("Starting metrics collection");
             
-            // 캐시 정리
-            resourceMetricsService.clearExpiredCache();
+            LocalDateTime collectionTime = LocalDateTime.now();
             
-            log.debug("Metrics collection completed successfully");
-        } catch (Exception e) {
-            log.error("Error during scheduled metrics collection: {}", e.getMessage(), e);
-        }
-    }
-
-    /**
-     * Pod 메트릭 수집 및 저장
-     */
-    @Transactional
-    public void collectPodMetrics() {
-        try {
-            List<PodResourceInfo> pods = kubernetesService.getModelServingPods(null);
-            log.debug("Collecting metrics for {} pods", pods.size());
-            
-            LocalDateTime timestamp = LocalDateTime.now();
-            
-            for (PodResourceInfo pod : pods) {
-                try {
-                    // 중복 체크
-                    if (metricsRepository.existsByResourceTypeAndResourceNameAndTimestamp(
-                        "POD", pod.getName(), timestamp)) {
-                        continue;
-                    }
-                    
-                    ResourceMetrics metrics = ResourceMetrics.builder()
-                        .resourceType("POD")
-                        .resourceName(pod.getName())
-                        .namespace(pod.getNamespace())
-                        .nodeName(pod.getNodeName())
-                        .timestamp(timestamp)
-                        .cpuUsage(pod.getCpuUsage())
-                        .memoryUsage(pod.getMemoryUsage())
-                        .gpuUsage(pod.getGpuUsage())
-                        .cpuRequest(pod.getCpuRequest())
-                        .memoryRequest(pod.getMemoryRequest())
-                        .gpuRequest(pod.getGpuRequest())
-                        .cpuLimit(pod.getCpuLimit())
-                        .memoryLimit(pod.getMemoryLimit())
-                        .gpuLimit(pod.getGpuLimit())
-                        .cpuUsagePercent(pod.getCpuUsagePercent())
-                        .memoryUsagePercent(pod.getMemoryUsagePercent())
-                        .gpuUsagePercent(pod.getGpuUsagePercent())
-                        .status(pod.getReadyStatus())
-                        .phase(pod.getPhase())
-                        .modelType(pod.getModelType())
-                        .modelName(pod.getModelName())
-                        .modelVersion(pod.getModelVersion())
-                        .labels(convertMapToJson(pod.getLabels()))
-                        .annotations(convertMapToJson(pod.getAnnotations()))
-                        .build();
-                        
-                    metricsRepository.save(metrics);
-                    
-                } catch (Exception e) {
-                    log.error("Error saving pod metrics for {}/{}: {}", 
-                        pod.getNamespace(), pod.getName(), e.getMessage());
-                }
+            // Pod 메트릭 수집
+            List<ResourceMetrics> podMetrics = collectPodMetrics(collectionTime);
+            if (!podMetrics.isEmpty()) {
+                saveMetricsSafely(podMetrics);
             }
             
-        } catch (Exception e) {
-            log.error("Error collecting pod metrics: {}", e.getMessage(), e);
-        }
-    }
-
-    /**
-     * Node 메트릭 수집 및 저장
-     */
-    @Transactional
-    public void collectNodeMetrics() {
-        try {
-            List<NodeResourceInfo> nodes = kubernetesService.getNodeResourceInfo();
-            log.debug("Collecting metrics for {} nodes", nodes.size());
-            
-            LocalDateTime timestamp = LocalDateTime.now();
-            
-            for (NodeResourceInfo node : nodes) {
-                try {
-                    // 중복 체크
-                    if (metricsRepository.existsByResourceTypeAndResourceNameAndTimestamp(
-                        "NODE", node.getName(), timestamp)) {
-                        continue;
-                    }
-                    
-                    ResourceMetrics metrics = ResourceMetrics.builder()
-                        .resourceType("NODE")
-                        .resourceName(node.getName())
-                        .timestamp(timestamp)
-                        .cpuUsage(node.getCpuUsage())
-                        .memoryUsage(node.getMemoryUsage())
-                        .gpuUsage(node.getGpuUsage())
-                        .storageUsage(node.getStorageUsage())
-                        .cpuUsagePercent(node.getCpuUsagePercent())
-                        .memoryUsagePercent(node.getMemoryUsagePercent())
-                        .gpuUsagePercent(node.getGpuUsagePercent())
-                        .storageUsagePercent(node.getStorageUsagePercent())
-                        .status(node.getStatus())
-                        .labels(convertMapToJson(node.getLabels()))
-                        .annotations(convertMapToJson(node.getAnnotations()))
-                        .build();
-                        
-                    metricsRepository.save(metrics);
-                    
-                } catch (Exception e) {
-                    log.error("Error saving node metrics for {}: {}", node.getName(), e.getMessage());
-                }
+            // Node 메트릭 수집
+            List<ResourceMetrics> nodeMetrics = collectNodeMetrics(collectionTime);
+            if (!nodeMetrics.isEmpty()) {
+                saveMetricsSafely(nodeMetrics);
             }
             
-        } catch (Exception e) {
-            log.error("Error collecting node metrics: {}", e.getMessage(), e);
-        }
-    }
-
-    /**
-     * 오래된 메트릭 데이터 정리 (매일 자정 실행)
-     */
-    @Scheduled(cron = "0 0 0 * * *") // 매일 자정
-    @Transactional
-    public void cleanupOldMetrics() {
-        try {
-            // 7일 이전 데이터 삭제
-            LocalDateTime cutoffTime = LocalDateTime.now().minusDays(7);
-            int deletedCount = metricsRepository.deleteOldMetrics(cutoffTime);
-            
-            log.info("Cleaned up {} old metric records before {}", deletedCount, cutoffTime);
+            log.debug("Metrics collection completed. Collected {} pod metrics, {} node metrics", 
+                     podMetrics.size(), nodeMetrics.size());
             
         } catch (Exception e) {
-            log.error("Error during metrics cleanup: {}", e.getMessage(), e);
+            log.error("Error during metrics collection: {}", e.getMessage(), e);
         }
-    }
-
-    /**
-     * 메트릭 수집 상태 확인
-     */
-    public boolean isCollectionHealthy() {
-        try {
-            // 최근 5분 내에 수집된 메트릭이 있는지 확인
-            LocalDateTime fiveMinutesAgo = LocalDateTime.now().minusMinutes(5);
-            long recentMetricsCount = metricsRepository.countMetricsBetween(fiveMinutesAgo, LocalDateTime.now());
-            
-            // 메트릭 서버 연결 상태도 확인
-            boolean metricsServerAvailable = resourceMetricsService.isMetricsServerAvailable();
-            
-            // 최근 5분 내에 메트릭이 수집되었고, 메트릭 서버가 사용 가능하면 건강한 상태
-            return recentMetricsCount > 0 && metricsServerAvailable;
-            
-        } catch (Exception e) {
-            log.error("Error checking collection health: {}", e.getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * 메트릭 수집 통계 조회
-     */
-    public Map<String, Object> getCollectionStatistics() {
-        Map<String, Object> stats = new HashMap<>();
-        
-        try {
-            LocalDateTime oneDayAgo = LocalDateTime.now().minusDays(1);
-            LocalDateTime oneHourAgo = LocalDateTime.now().minusHours(1);
-            
-            // 24시간 통계
-            long dayMetricsCount = metricsRepository.countMetricsBetween(oneDayAgo, LocalDateTime.now());
-            stats.put("metricsLast24Hours", dayMetricsCount);
-            
-            // 1시간 통계
-            long hourMetricsCount = metricsRepository.countMetricsBetween(oneHourAgo, LocalDateTime.now());
-            stats.put("metricsLastHour", hourMetricsCount);
-            
-            // 타입별 통계
-            List<ResourceMetrics> recentMetrics = metricsRepository.findMetricsSince(oneHourAgo);
-            long podMetricsCount = recentMetrics.stream()
-                .filter(m -> "POD".equals(m.getResourceType()))
-                .count();
-            long nodeMetricsCount = recentMetrics.stream()
-                .filter(m -> "NODE".equals(m.getResourceType()))
-                .count();
-            
-            stats.put("podMetricsLastHour", podMetricsCount);
-            stats.put("nodeMetricsLastHour", nodeMetricsCount);
-            
-            // 마지막 수집 시간
-            Optional<ResourceMetrics> lastMetric = metricsRepository.findAll().stream()
-                .max(Comparator.comparing(ResourceMetrics::getTimestamp));
-            
-            if (lastMetric.isPresent()) {
-                stats.put("lastCollectionTime", lastMetric.get().getTimestamp());
-            }
-            
-            stats.put("collectionHealthy", isCollectionHealthy());
-            stats.put("timestamp", LocalDateTime.now());
-            
-        } catch (Exception e) {
-            log.error("Error calculating collection statistics: {}", e.getMessage());
-            stats.put("error", e.getMessage());
-        }
-        
-        return stats;
     }
 
     /**
      * 수동 메트릭 수집 트리거
      */
-    public void triggerManualCollection() {
+    public void triggerMetricsCollection() {
         log.info("Manual metrics collection triggered");
+        collectMetrics();
+    }
+
+    /**
+     * 오래된 메트릭 데이터 정리 (매일 새벽 3시 실행)
+     */
+    @Scheduled(cron = "0 0 3 * * *")
+    @Transactional
+    public void cleanupOldMetrics() {
         try {
-            collectMetrics();
-            log.info("Manual metrics collection completed successfully");
+            LocalDateTime cutoffTime = LocalDateTime.now().minusDays(30); // 30일 이전 데이터 삭제
+            
+            // 수정된 메서드명 사용
+            int deletedCount = metricsRepository.deleteMetricsOlderThan(cutoffTime);
+            
+            if (deletedCount > 0) {
+                log.info("Cleaned up {} old metrics records", deletedCount);
+            }
+            
         } catch (Exception e) {
-            log.error("Error during manual metrics collection: {}", e.getMessage(), e);
-            throw new RuntimeException("Manual metrics collection failed", e);
+            log.error("Error cleaning up old metrics: {}", e.getMessage(), e);
         }
     }
 
     /**
-     * 특정 Pod의 메트릭 수집
+     * 메트릭 서버 상태 확인
      */
-    @Transactional
-    public void collectPodMetrics(String namespace, String podName) {
+    public boolean isMetricsServerAvailable() {
         try {
-            PodResourceInfo pod = kubernetesService.getPodDetails(namespace, podName);
-            if (pod != null) {
-                log.info("Collecting metrics for specific pod: {}/{}", namespace, podName);
-                
-                ResourceMetrics metrics = createPodMetrics(pod, LocalDateTime.now());
-                metricsRepository.save(metrics);
-                
-                log.debug("Successfully saved metrics for pod: {}/{}", namespace, podName);
-            } else {
-                log.warn("Pod not found: {}/{}", namespace, podName);
-            }
+            LocalDateTime oneHourAgo = LocalDateTime.now().minusHours(1);
+            
+            // 수정된 메서드명 사용
+            return metricsRepository.hasRecentMetrics(oneHourAgo);
+            
         } catch (Exception e) {
-            log.error("Error collecting metrics for pod {}/{}: {}", namespace, podName, e.getMessage());
+            log.warn("Error checking metrics server availability: {}", e.getMessage());
+            return false;
         }
     }
 
     /**
-     * 특정 Node의 메트릭 수집
+     * 최근 메트릭 통계 조회
      */
-    @Transactional
-    public void collectNodeMetrics(String nodeName) {
+    public Map<String, Object> getRecentMetricsStatistics() {
         try {
-            NodeResourceInfo node = kubernetesService.getNodeDetails(nodeName);
-            if (node != null) {
-                log.info("Collecting metrics for specific node: {}", nodeName);
-                
-                ResourceMetrics metrics = createNodeMetrics(node, LocalDateTime.now());
-                metricsRepository.save(metrics);
-                
-                log.debug("Successfully saved metrics for node: {}", nodeName);
-            } else {
-                log.warn("Node not found: {}", nodeName);
-            }
-        } catch (Exception e) {
-            log.error("Error collecting metrics for node {}: {}", nodeName, e.getMessage());
-        }
-    }
-
-    /**
-     * 배치 메트릭 수집 (대용량 클러스터용)
-     */
-    @Transactional
-    public void collectMetricsBatch() {
-        log.info("Starting batch metrics collection");
-        
-        try {
-            LocalDateTime timestamp = LocalDateTime.now();
+            LocalDateTime oneHourAgo = LocalDateTime.now().minusHours(1);
             
-            // Pod 메트릭 배치 수집
-            List<PodResourceInfo> allPods = kubernetesService.getAllPods(null);
-            List<ResourceMetrics> podMetricsList = allPods.stream()
-                .map(pod -> createPodMetrics(pod, timestamp))
-                .collect(Collectors.toList());
+            // 수정된 메서드명 사용
+            List<ResourceMetrics> recentMetrics = metricsRepository.findMetricsSince(oneHourAgo);
             
-            if (!podMetricsList.isEmpty()) {
-                metricsRepository.saveAll(podMetricsList);
-                log.info("Saved {} pod metrics in batch", podMetricsList.size());
-            }
-            
-            // Node 메트릭 배치 수집
-            List<NodeResourceInfo> allNodes = kubernetesService.getNodeResourceInfo();
-            List<ResourceMetrics> nodeMetricsList = allNodes.stream()
-                .map(node -> createNodeMetrics(node, timestamp))
-                .collect(Collectors.toList());
-            
-            if (!nodeMetricsList.isEmpty()) {
-                metricsRepository.saveAll(nodeMetricsList);
-                log.info("Saved {} node metrics in batch", nodeMetricsList.size());
-            }
-            
-            log.info("Batch metrics collection completed successfully");
+            return calculateMetricsStatistics(recentMetrics);
             
         } catch (Exception e) {
-            log.error("Error during batch metrics collection: {}", e.getMessage(), e);
+            log.error("Error getting recent metrics statistics: {}", e.getMessage(), e);
+            return Map.of("error", "Failed to retrieve statistics");
         }
     }
 
     // Private helper methods
 
-    /**
-     * Pod 메트릭 생성 헬퍼 메서드
-     */
-    private ResourceMetrics createPodMetrics(PodResourceInfo pod, LocalDateTime timestamp) {
-        return ResourceMetrics.builder()
-            .resourceType("POD")
-            .resourceName(pod.getName())
-            .namespace(pod.getNamespace())
-            .nodeName(pod.getNodeName())
-            .timestamp(timestamp)
-            .cpuUsage(pod.getCpuUsage())
-            .memoryUsage(pod.getMemoryUsage())
-            .gpuUsage(pod.getGpuUsage())
-            .cpuRequest(pod.getCpuRequest())
-            .memoryRequest(pod.getMemoryRequest())
-            .gpuRequest(pod.getGpuRequest())
-            .cpuLimit(pod.getCpuLimit())
-            .memoryLimit(pod.getMemoryLimit())
-            .gpuLimit(pod.getGpuLimit())
-            .cpuUsagePercent(pod.getCpuUsagePercent())
-            .memoryUsagePercent(pod.getMemoryUsagePercent())
-            .gpuUsagePercent(pod.getGpuUsagePercent())
-            .status(pod.getReadyStatus())
-            .phase(pod.getPhase())
-            .modelType(pod.getModelType())
-            .modelName(pod.getModelName())
-            .modelVersion(pod.getModelVersion())
-            .labels(convertMapToJson(pod.getLabels()))
-            .annotations(convertMapToJson(pod.getAnnotations()))
-            .build();
+    private List<ResourceMetrics> collectPodMetrics(LocalDateTime collectionTime) {
+        List<ResourceMetrics> podMetricsList = new ArrayList<>();
+        
+        try {
+            // Kubernetes API를 통한 Pod 메트릭 수집
+            var podList = coreV1Api.listPodForAllNamespaces(
+                null, null, null, null, null, null, null, null, null, null, null);
+            
+            for (var pod : podList.getItems()) {
+                try {
+                    ResourceMetrics metrics = createPodMetrics(pod, collectionTime);
+                    if (metrics != null) {
+                        podMetricsList.add(metrics);
+                    }
+                } catch (Exception e) {
+                    log.warn("Error creating metrics for pod {}: {}", 
+                            pod.getMetadata().getName(), e.getMessage());
+                }
+            }
+            
+        } catch (ApiException e) {
+            log.error("Error collecting pod metrics: {}", e.getMessage());
+        }
+        
+        return podMetricsList;
+    }
+
+    private List<ResourceMetrics> collectNodeMetrics(LocalDateTime collectionTime) {
+        List<ResourceMetrics> nodeMetricsList = new ArrayList<>();
+        
+        try {
+            // Kubernetes API를 통한 Node 메트릭 수집
+            var nodeList = coreV1Api.listNode(
+                null, null, null, null, null, null, null, null, null, null, null);
+            
+            for (var node : nodeList.getItems()) {
+                try {
+                    ResourceMetrics metrics = createNodeMetrics(node, collectionTime);
+                    if (metrics != null) {
+                        nodeMetricsList.add(metrics);
+                    }
+                } catch (Exception e) {
+                    log.warn("Error creating metrics for node {}: {}", 
+                            node.getMetadata().getName(), e.getMessage());
+                }
+            }
+            
+        } catch (ApiException e) {
+            log.error("Error collecting node metrics: {}", e.getMessage());
+        }
+        
+        return nodeMetricsList;
+    }
+
+    private ResourceMetrics createPodMetrics(io.kubernetes.client.openapi.models.V1Pod pod, 
+                                           LocalDateTime collectionTime) {
+        try {
+            var metadata = pod.getMetadata();
+            var spec = pod.getSpec();
+            
+            if (metadata == null || spec == null) {
+                return null;
+            }
+            
+            // 리소스 사용량 정보 수집 (실제로는 Metrics Server API 호출 필요)
+            Map<String, String> podMetrics = resourceMetricsService.getPodMetrics(
+                metadata.getNamespace(), metadata.getName());
+            
+            return ResourceMetrics.builder()
+                .resourceType("POD")
+                .resourceName(metadata.getName())
+                .namespace(metadata.getNamespace())
+                .nodeName(spec.getNodeName())
+                .timestamp(collectionTime)
+                .cpuUsageCores(parseResourceValue(podMetrics.get("cpu")))
+                .memoryUsageBytes(parseMemoryValue(podMetrics.get("memory")))
+                .networkRxBytes(parseNetworkValue(podMetrics.get("network_rx")))
+                .networkTxBytes(parseNetworkValue(podMetrics.get("network_tx")))
+                .collectionSource("kubernetes-api")
+                .build();
+                
+        } catch (Exception e) {
+            log.warn("Error creating pod metrics: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private ResourceMetrics createNodeMetrics(io.kubernetes.client.openapi.models.V1Node node, 
+                                            LocalDateTime collectionTime) {
+        try {
+            var metadata = node.getMetadata();
+            var status = node.getStatus();
+            
+            if (metadata == null || status == null) {
+                return null;
+            }
+            
+            // 노드 리소스 사용량 정보 수집
+            Map<String, String> nodeMetrics = resourceMetricsService.getNodeMetrics(metadata.getName());
+            
+            return ResourceMetrics.builder()
+                .resourceType("NODE")
+                .resourceName(metadata.getName())
+                .nodeName(metadata.getName())
+                .timestamp(collectionTime)
+                .cpuUsageCores(parseResourceValue(nodeMetrics.get("cpu")))
+                .memoryUsageBytes(parseMemoryValue(nodeMetrics.get("memory")))
+                .storageUsageBytes(parseStorageValue(nodeMetrics.get("storage")))
+                .collectionSource("kubernetes-api")
+                .build();
+                
+        } catch (Exception e) {
+            log.warn("Error creating node metrics: {}", e.getMessage());
+            return null;
+        }
     }
 
     /**
-     * Node 메트릭 생성 헬퍼 메서드
+     * 메트릭 안전하게 저장 (중복 체크 포함)
      */
-    private ResourceMetrics createNodeMetrics(NodeResourceInfo node, LocalDateTime timestamp) {
-        return ResourceMetrics.builder()
-            .resourceType("NODE")
-            .resourceName(node.getName())
-            .timestamp(timestamp)
-            .cpuUsage(node.getCpuUsage())
-            .memoryUsage(node.getMemoryUsage())
-            .gpuUsage(node.getGpuUsage())
-            .storageUsage(node.getStorageUsage())
-            .cpuUsagePercent(node.getCpuUsagePercent())
-            .memoryUsagePercent(node.getMemoryUsagePercent())
-            .gpuUsagePercent(node.getGpuUsagePercent())
-            .storageUsagePercent(node.getStorageUsagePercent())
-            .status(node.getStatus())
-            .labels(convertMapToJson(node.getLabels()))
-            .annotations(convertMapToJson(node.getAnnotations()))
-            .build();
+    private void saveMetricsSafely(List<ResourceMetrics> metricsList) {
+        List<ResourceMetrics> metricsToSave = new ArrayList<>();
+        
+        for (ResourceMetrics metrics : metricsList) {
+            try {
+                // 중복 메트릭 체크
+                if (!metricsRepository.existsByResourceTypeAndResourceNameAndTimestamp(
+                        metrics.getResourceType(), 
+                        metrics.getResourceName(), 
+                        metrics.getTimestamp())) {
+                    
+                    metricsToSave.add(metrics);
+                }
+            } catch (Exception e) {
+                log.warn("Error checking metric existence for {}: {}", 
+                        metrics.getResourceName(), e.getMessage());
+            }
+        }
+        
+        // 배치로 저장
+        if (!metricsToSave.isEmpty()) {
+            try {
+                metricsRepository.saveAll(metricsToSave);
+                log.debug("Saved {} metrics", metricsToSave.size());
+            } catch (Exception e) {
+                log.error("Error saving metrics batch: {}", e.getMessage(), e);
+                
+                // 개별 저장으로 fallback
+                saveMetricsIndividually(metricsToSave);
+            }
+        }
     }
 
     /**
-     * Map을 JSON 문자열로 변환
+     * 개별 메트릭 저장 (배치 저장 실패시 fallback)
      */
-    private String convertMapToJson(Map<String, String> map) {
-        if (map == null || map.isEmpty()) {
-            return "{}";
+    private void saveMetricsIndividually(List<ResourceMetrics> metricsList) {
+        int savedCount = 0;
+        
+        for (ResourceMetrics metrics : metricsList) {
+            try {
+                metricsRepository.save(metrics);
+                savedCount++;
+            } catch (Exception e) {
+                log.warn("Error saving individual metric for {}: {}", 
+                        metrics.getResourceName(), e.getMessage());
+            }
+        }
+        
+        log.debug("Individually saved {} out of {} metrics", savedCount, metricsList.size());
+    }
+
+    /**
+     * 메트릭 통계 계산
+     */
+    private Map<String, Object> calculateMetricsStatistics(List<ResourceMetrics> recentMetrics) {
+        try {
+            long podMetricsCount = recentMetrics.stream()
+                .filter(m -> "POD".equals(m.getResourceType()))
+                .count();
+            
+            long nodeMetricsCount = recentMetrics.stream()
+                .filter(m -> "NODE".equals(m.getResourceType()))
+                .count();
+            
+            double avgCpuUsage = recentMetrics.stream()
+                .filter(m -> m.getCpuUsageCores() != null)
+                .mapToDouble(ResourceMetrics::getCpuUsageCores)
+                .average()
+                .orElse(0.0);
+            
+            long avgMemoryUsage = recentMetrics.stream()
+                .filter(m -> m.getMemoryUsageBytes() != null)
+                .mapToLong(ResourceMetrics::getMemoryUsageBytes)
+                .sum() / Math.max(1, recentMetrics.size());
+            
+            return Map.of(
+                "totalMetrics", recentMetrics.size(),
+                "podMetrics", podMetricsCount,
+                "nodeMetrics", nodeMetricsCount,
+                "avgCpuUsage", avgCpuUsage,
+                "avgMemoryUsage", avgMemoryUsage,
+                "lastUpdated", LocalDateTime.now()
+            );
+            
+        } catch (Exception e) {
+            log.error("Error calculating metrics statistics: {}", e.getMessage());
+            return Map.of(
+                "error", "Failed to calculate statistics",
+                "lastUpdated", LocalDateTime.now()
+            );
+        }
+    }
+
+    // 리소스 값 파싱 유틸리티 메서드들
+
+    private Double parseResourceValue(String value) {
+        if (value == null || value.isEmpty() || "0".equals(value)) {
+            return 0.0;
         }
         
         try {
-            StringBuilder json = new StringBuilder("{");
-            boolean first = true;
-            
-            for (Map.Entry<String, String> entry : map.entrySet()) {
-                if (!first) {
-                    json.append(",");
-                }
-                json.append("\"").append(escapeJsonString(entry.getKey())).append("\":\"")
-                    .append(escapeJsonString(entry.getValue())).append("\"");
-                first = false;
+            // CPU 코어 값 파싱 (예: "500m" -> 0.5)
+            if (value.endsWith("m")) {
+                return Double.parseDouble(value.substring(0, value.length() - 1)) / 1000.0;
             }
             
-            json.append("}");
-            return json.toString();
+            return Double.parseDouble(value);
+        } catch (NumberFormatException e) {
+            log.warn("Error parsing resource value '{}': {}", value, e.getMessage());
+            return 0.0;
+        }
+    }
+
+    private Long parseMemoryValue(String value) {
+        if (value == null || value.isEmpty() || "0".equals(value)) {
+            return 0L;
+        }
+        
+        try {
+            // 메모리 값 파싱 (예: "1Gi" -> bytes)
+            String numericPart = value.replaceAll("[^0-9.]", "");
+            double numValue = Double.parseDouble(numericPart);
+            
+            if (value.contains("Ki")) {
+                return (long) (numValue * 1024);
+            } else if (value.contains("Mi")) {
+                return (long) (numValue * 1024 * 1024);
+            } else if (value.contains("Gi")) {
+                return (long) (numValue * 1024 * 1024 * 1024);
+            }
+            
+            return (long) numValue;
+        } catch (NumberFormatException e) {
+            log.warn("Error parsing memory value '{}': {}", value, e.getMessage());
+            return 0L;
+        }
+    }
+
+    private Long parseNetworkValue(String value) {
+        if (value == null || value.isEmpty()) {
+            return 0L;
+        }
+        
+        try {
+            return Long.parseLong(value.replaceAll("[^0-9]", ""));
+        } catch (NumberFormatException e) {
+            log.warn("Error parsing network value '{}': {}", value, e.getMessage());
+            return 0L;
+        }
+    }
+
+    private Long parseStorageValue(String value) {
+        return parseMemoryValue(value); // 메모리와 동일한 파싱 로직 사용
+    }
+
+    /**
+     * 메트릭 수집 상태 조회
+     */
+    public Map<String, Object> getCollectionStatus() {
+        try {
+            LocalDateTime lastHour = LocalDateTime.now().minusHours(1);
+            long recentMetricsCount = metricsRepository.countMetricsBetween(lastHour, LocalDateTime.now());
+            
+            boolean isHealthy = recentMetricsCount > 0;
+            
+            return Map.of(
+                "status", isHealthy ? "HEALTHY" : "UNHEALTHY",
+                "recentMetricsCount", recentMetricsCount,
+                "metricsServerAvailable", isMetricsServerAvailable(),
+                "lastCheck", LocalDateTime.now()
+            );
             
         } catch (Exception e) {
-            log.error("Error converting map to JSON: {}", e.getMessage());
-            return "{}";
+            log.error("Error getting collection status: {}", e.getMessage());
+            return Map.of(
+                "status", "ERROR",
+                "error", e.getMessage(),
+                "lastCheck", LocalDateTime.now()
+            );
         }
     }
 
     /**
-     * JSON 문자열 이스케이프 처리
+     * 특정 리소스의 메트릭 조회
      */
-    private String escapeJsonString(String input) {
-        if (input == null) {
-            return "";
+    public List<ResourceMetrics> getResourceMetrics(String resourceType, String resourceName, int hours) {
+        try {
+            LocalDateTime since = LocalDateTime.now().minusHours(hours);
+            
+            return metricsRepository.findLatestMetricsByResource(resourceType, resourceName);
+            
+        } catch (Exception e) {
+            log.error("Error getting resource metrics for {}/{}: {}", resourceType, resourceName, e.getMessage());
+            return new ArrayList<>();
         }
-        return input.replace("\\", "\\\\")
-                   .replace("\"", "\\\"")
-                   .replace("\n", "\\n")
-                   .replace("\r", "\\r")
-                   .replace("\t", "\\t");
+    }
+
+    /**
+     * 메트릭 수집 강제 실행 (테스트용)
+     */
+    public Map<String, Object> forceCollectMetrics() {
+        try {
+            log.info("Force collecting metrics");
+            
+            LocalDateTime startTime = LocalDateTime.now();
+            collectMetrics();
+            LocalDateTime endTime = LocalDateTime.now();
+            
+            long duration = java.time.Duration.between(startTime, endTime).toMillis();
+            
+            return Map.of(
+                "status", "SUCCESS",
+                "duration", duration + "ms",
+                "timestamp", endTime
+            );
+            
+        } catch (Exception e) {
+            log.error("Error in force collect metrics: {}", e.getMessage(), e);
+            return Map.of(
+                "status", "ERROR",
+                "error", e.getMessage(),
+                "timestamp", LocalDateTime.now()
+            );
+        }
     }
 }

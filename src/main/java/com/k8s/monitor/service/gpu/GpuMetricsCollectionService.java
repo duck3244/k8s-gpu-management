@@ -15,7 +15,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * GPU 메트릭 수집 서비스
+ * GPU 메트릭 수집 서비스 (수정된 버전)
  * nvidia-smi를 통한 GPU 메트릭 수집 및 저장
  */
 @Service
@@ -28,13 +28,13 @@ public class GpuMetricsCollectionService {
     private final MigInstanceRepository migInstanceRepository;
 
     /**
-     * GPU 메트릭 수집 (스케줄러)
+     * GPU 메트릭 수집 (스케줄러) - 메서드명 변경으로 중복 해결
      */
     @Scheduled(fixedRate = 30000) // 30초마다 실행
     @Transactional
-    public void collectGpuMetrics() {
+    public void collectGpuMetricsScheduled() {
         try {
-            log.debug("Starting GPU metrics collection");
+            log.debug("Starting scheduled GPU metrics collection");
             
             List<GpuDevice> activeDevices = gpuDeviceRepository.findByDeviceStatus("ACTIVE");
             List<GpuDevice> migEnabledDevices = gpuDeviceRepository.findByDeviceStatus("MIG_ENABLED");
@@ -62,10 +62,11 @@ public class GpuMetricsCollectionService {
     }
 
     /**
-     * 수동 GPU 메트릭 수집 트리거
+     * 수동 GPU 메트릭 수집 트리거 - 다른 메서드명 사용
      */
-    public void collectGpuMetrics() {
-        collectGpuMetrics();
+    public void triggerMetricsCollection() {
+        log.info("Manual GPU metrics collection triggered");
+        collectGpuMetricsScheduled(); // 스케줄 메서드 재사용
     }
 
     /**
@@ -74,61 +75,30 @@ public class GpuMetricsCollectionService {
     public Map<String, Object> getGpuUsageStatistics(int hours) {
         LocalDateTime since = LocalDateTime.now().minusHours(hours);
         
-        List<Object[]> usageStatsByDevice = metricsRepository.findUsageStatsByDevice(since);
-        List<Object[]> usageStatsByModel = metricsRepository.findUsageStatsByModel(since);
-        List<Object[]> usageStatsByNode = metricsRepository.findUsageStatsByNode(since);
-        List<Object[]> hourlyTrend = metricsRepository.findHourlyUsageTrend(since);
-        
-        Map<String, Object> deviceStats = usageStatsByDevice.stream()
-            .collect(Collectors.toMap(
-                row -> (String) row[0],
-                row -> Map.of(
-                    "modelName", (String) row[1],
-                    "avgGpuUtilization", ((Number) row[2]).doubleValue(),
-                    "avgMemoryUtilization", ((Number) row[3]).doubleValue(),
-                    "avgTemperature", ((Number) row[4]).doubleValue()
-                )
-            ));
-        
-        Map<String, Object> modelStats = usageStatsByModel.stream()
-            .collect(Collectors.toMap(
-                row -> (String) row[0],
-                row -> Map.of(
-                    "deviceCount", ((Number) row[1]).intValue(),
-                    "avgGpuUtilization", ((Number) row[2]).doubleValue(),
-                    "avgMemoryUtilization", ((Number) row[3]).doubleValue(),
-                    "avgTemperature", ((Number) row[4]).doubleValue()
-                )
-            ));
-        
-        Map<String, Object> nodeStats = usageStatsByNode.stream()
-            .collect(Collectors.toMap(
-                row -> (String) row[0],
-                row -> Map.of(
-                    "deviceCount", ((Number) row[1]).intValue(),
-                    "avgGpuUtilization", ((Number) row[2]).doubleValue(),
-                    "avgMemoryUtilization", ((Number) row[3]).doubleValue(),
-                    "avgTemperature", ((Number) row[4]).doubleValue()
-                )
-            ));
-        
-        List<Map<String, Object>> trendData = hourlyTrend.stream()
-            .map(row -> Map.of(
-                "hour", ((Number) row[0]).intValue(),
-                "avgGpuUtilization", ((Number) row[1]).doubleValue(),
-                "avgMemoryUtilization", ((Number) row[2]).doubleValue(),
-                "avgTemperature", ((Number) row[3]).doubleValue()
-            ))
-            .collect(Collectors.toList());
-        
-        return Map.of(
-            "timeRange", hours + " hours",
-            "deviceStatistics", deviceStats,
-            "modelStatistics", modelStats,
-            "nodeStatistics", nodeStats,
-            "hourlyTrend", trendData,
-            "lastUpdated", LocalDateTime.now()
-        );
+        try {
+            List<Object[]> usageStatsByDevice = metricsRepository.findUsageStatsByDevice(since);
+            List<Object[]> usageStatsByModel = metricsRepository.findUsageStatsByModel(since);
+            List<Object[]> usageStatsByNode = metricsRepository.findUsageStatsByNode(since);
+            List<Object[]> hourlyTrend = metricsRepository.findHourlyUsageTrend(since);
+            
+            Map<String, Object> deviceStats = convertDeviceStats(usageStatsByDevice);
+            Map<String, Object> modelStats = convertModelStats(usageStatsByModel);
+            Map<String, Object> nodeStats = convertNodeStats(usageStatsByNode);
+            List<Map<String, Object>> trendData = convertHourlyTrend(hourlyTrend);
+            
+            return Map.of(
+                "timeRange", hours + " hours",
+                "deviceStatistics", deviceStats,
+                "modelStatistics", modelStats,
+                "nodeStatistics", nodeStats,
+                "hourlyTrend", trendData,
+                "lastUpdated", LocalDateTime.now()
+            );
+            
+        } catch (Exception e) {
+            log.error("Error getting GPU usage statistics: {}", e.getMessage(), e);
+            return createEmptyStatistics(hours);
+        }
     }
 
     /**
@@ -136,17 +106,16 @@ public class GpuMetricsCollectionService {
      */
     public List<Map<String, Object>> getOverheatingAlerts() {
         LocalDateTime since = LocalDateTime.now().minusHours(1);
-        List<GpuUsageMetrics> overheatingMetrics = metricsRepository.findOverheatingMetrics(85.0, since);
         
-        return overheatingMetrics.stream()
-            .map(metric -> Map.of(
-                "deviceId", metric.getDevice() != null ? metric.getDevice().getDeviceId() : "unknown",
-                "migId", metric.getMigInstance() != null ? metric.getMigInstance().getMigId() : null,
-                "temperature", metric.getTemperatureC(),
-                "timestamp", metric.getTimestamp(),
-                "severity", getTemperatureSeverity(metric.getTemperatureC())
-            ))
-            .collect(Collectors.toList());
+        try {
+            List<GpuUsageMetrics> overheatingMetrics = metricsRepository.findOverheatingMetrics(85.0, since);
+            
+            return convertOverheatingMetrics(overheatingMetrics);
+            
+        } catch (Exception e) {
+            log.error("Error getting overheating alerts: {}", e.getMessage(), e);
+            return new ArrayList<>();
+        }
     }
 
     /**
@@ -156,10 +125,15 @@ public class GpuMetricsCollectionService {
     @Transactional
     public void cleanupOldMetrics() {
         LocalDateTime cutoff = LocalDateTime.now().minusDays(30); // 30일 이전 데이터 삭제
-        int deletedCount = metricsRepository.deleteOldMetrics(cutoff);
         
-        if (deletedCount > 0) {
-            log.info("Cleaned up {} old GPU metrics records", deletedCount);
+        try {
+            int deletedCount = metricsRepository.deleteOldMetrics(cutoff);
+            
+            if (deletedCount > 0) {
+                log.info("Cleaned up {} old GPU metrics records", deletedCount);
+            }
+        } catch (Exception e) {
+            log.error("Error cleaning up old metrics: {}", e.getMessage(), e);
         }
     }
 
@@ -308,11 +282,180 @@ public class GpuMetricsCollectionService {
         return metrics;
     }
 
+    // 통계 변환 메서드들
+
+    private Map<String, Object> convertDeviceStats(List<Object[]> usageStatsByDevice) {
+        Map<String, Object> deviceStats = new HashMap<>();
+        
+        try {
+            for (Object[] row : usageStatsByDevice) {
+                if (row.length >= 5) {
+                    String deviceId = (String) row[0];
+                    String modelName = (String) row[1];
+                    Double avgGpuUtilization = getDoubleFromRow(row, 2);
+                    Double avgMemoryUtilization = getDoubleFromRow(row, 3);
+                    Double avgTemperature = getDoubleFromRow(row, 4);
+                    
+                    Map<String, Object> stats = new HashMap<>();
+                    stats.put("modelName", modelName);
+                    stats.put("avgGpuUtilization", avgGpuUtilization);
+                    stats.put("avgMemoryUtilization", avgMemoryUtilization);
+                    stats.put("avgTemperature", avgTemperature);
+                    
+                    deviceStats.put(deviceId, stats);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Error converting device stats: {}", e.getMessage());
+        }
+        
+        return deviceStats;
+    }
+
+    private Map<String, Object> convertModelStats(List<Object[]> usageStatsByModel) {
+        Map<String, Object> modelStats = new HashMap<>();
+        
+        try {
+            for (Object[] row : usageStatsByModel) {
+                if (row.length >= 5) {
+                    String modelName = (String) row[0];
+                    Integer deviceCount = getIntegerFromRow(row, 1);
+                    Double avgGpuUtilization = getDoubleFromRow(row, 2);
+                    Double avgMemoryUtilization = getDoubleFromRow(row, 3);
+                    Double avgTemperature = getDoubleFromRow(row, 4);
+                    
+                    Map<String, Object> stats = new HashMap<>();
+                    stats.put("deviceCount", deviceCount);
+                    stats.put("avgGpuUtilization", avgGpuUtilization);
+                    stats.put("avgMemoryUtilization", avgMemoryUtilization);
+                    stats.put("avgTemperature", avgTemperature);
+                    
+                    modelStats.put(modelName, stats);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Error converting model stats: {}", e.getMessage());
+        }
+        
+        return modelStats;
+    }
+
+    private Map<String, Object> convertNodeStats(List<Object[]> usageStatsByNode) {
+        Map<String, Object> nodeStats = new HashMap<>();
+        
+        try {
+            for (Object[] row : usageStatsByNode) {
+                if (row.length >= 5) {
+                    String nodeName = (String) row[0];
+                    Integer deviceCount = getIntegerFromRow(row, 1);
+                    Double avgGpuUtilization = getDoubleFromRow(row, 2);
+                    Double avgMemoryUtilization = getDoubleFromRow(row, 3);
+                    Double avgTemperature = getDoubleFromRow(row, 4);
+                    
+                    Map<String, Object> stats = new HashMap<>();
+                    stats.put("deviceCount", deviceCount);
+                    stats.put("avgGpuUtilization", avgGpuUtilization);
+                    stats.put("avgMemoryUtilization", avgMemoryUtilization);
+                    stats.put("avgTemperature", avgTemperature);
+                    
+                    nodeStats.put(nodeName, stats);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Error converting node stats: {}", e.getMessage());
+        }
+        
+        return nodeStats;
+    }
+
+    private List<Map<String, Object>> convertHourlyTrend(List<Object[]> hourlyTrend) {
+        List<Map<String, Object>> trendData = new ArrayList<>();
+        
+        try {
+            for (Object[] row : hourlyTrend) {
+                if (row.length >= 4) {
+                    Map<String, Object> hourData = new HashMap<>();
+                    hourData.put("hour", getIntegerFromRow(row, 0));
+                    hourData.put("avgGpuUtilization", getDoubleFromRow(row, 1));
+                    hourData.put("avgMemoryUtilization", getDoubleFromRow(row, 2));
+                    hourData.put("avgTemperature", getDoubleFromRow(row, 3));
+                    
+                    trendData.add(hourData);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Error converting hourly trend: {}", e.getMessage());
+        }
+        
+        return trendData;
+    }
+
+    private List<Map<String, Object>> convertOverheatingMetrics(List<GpuUsageMetrics> overheatingMetrics) {
+        List<Map<String, Object>> alerts = new ArrayList<>();
+        
+        try {
+            for (GpuUsageMetrics metric : overheatingMetrics) {
+                Map<String, Object> alert = new HashMap<>();
+                alert.put("deviceId", metric.getDevice() != null ? metric.getDevice().getDeviceId() : "unknown");
+                alert.put("migId", metric.getMigInstance() != null ? metric.getMigInstance().getMigId() : null);
+                alert.put("temperature", metric.getTemperatureC());
+                alert.put("timestamp", metric.getTimestamp());
+                alert.put("severity", getTemperatureSeverity(metric.getTemperatureC()));
+                
+                alerts.add(alert);
+            }
+        } catch (Exception e) {
+            log.warn("Error converting overheating metrics: {}", e.getMessage());
+        }
+        
+        return alerts;
+    }
+
+    // 유틸리티 메서드들
+
     private String getTemperatureSeverity(Double temperature) {
         if (temperature == null) return "UNKNOWN";
         if (temperature >= 90) return "CRITICAL";
         if (temperature >= 85) return "WARNING";
         return "NORMAL";
+    }
+
+    private Map<String, Object> createEmptyStatistics(int hours) {
+        return Map.of(
+            "timeRange", hours + " hours",
+            "deviceStatistics", new HashMap<>(),
+            "modelStatistics", new HashMap<>(),
+            "nodeStatistics", new HashMap<>(),
+            "hourlyTrend", new ArrayList<>(),
+            "lastUpdated", LocalDateTime.now(),
+            "error", "Failed to retrieve statistics"
+        );
+    }
+
+    // 안전한 타입 변환 메서드들
+    
+    private Double getDoubleFromRow(Object[] row, int index) {
+        try {
+            Object value = row[index];
+            if (value instanceof Number) {
+                return ((Number) value).doubleValue();
+            }
+            return 0.0;
+        } catch (Exception e) {
+            return 0.0;
+        }
+    }
+
+    private Integer getIntegerFromRow(Object[] row, int index) {
+        try {
+            Object value = row[index];
+            if (value instanceof Number) {
+                return ((Number) value).intValue();
+            }
+            return 0;
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
     // Utility methods for safe parsing

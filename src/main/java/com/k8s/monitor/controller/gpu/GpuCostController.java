@@ -2,20 +2,14 @@ package com.k8s.monitor.controller.gpu;
 
 import com.k8s.monitor.dto.gpu.CostOptimizationSuggestion;
 import com.k8s.monitor.dto.gpu.GpuCostAnalysis;
-import com.k8s.monitor.service.gpu.GpuAllocationService;
+import com.k8s.monitor.service.gpu.GpuCostAnalysisService; // 추가 필요
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 
-/**
- * GPU 비용 분석 REST API 컨트롤러
- * GPU 비용 분석, 최적화 제안 등의 API 제공
- */
 @RestController
 @RequestMapping("/api/v1/gpu/cost")
 @RequiredArgsConstructor
@@ -23,7 +17,8 @@ import java.util.Map;
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class GpuCostController {
     
-    private final GpuAllocationService allocationService;
+    // 올바른 의존성 주입
+    private final GpuCostAnalysisService costAnalysisService;
 
     /**
      * GPU 비용 분석 조회
@@ -34,7 +29,8 @@ public class GpuCostController {
         log.info("Fetching GPU cost analysis for last {} days", days);
         
         try {
-            GpuCostAnalysis analysis = buildCostAnalysis(days);
+            // 서비스 메서드 위임 - 중복 구현 제거
+            GpuCostAnalysis analysis = costAnalysisService.generateCostAnalysis(days);
             return ResponseEntity.ok(analysis);
         } catch (Exception e) {
             log.error("Error fetching GPU cost analysis: {}", e.getMessage(), e);
@@ -50,14 +46,14 @@ public class GpuCostController {
         log.info("Fetching cost optimization suggestions");
         
         try {
-            List<CostOptimizationSuggestion> suggestions = generateOptimizationSuggestions();
+            // 서비스 메서드 위임
+            List<CostOptimizationSuggestion> suggestions = 
+                costAnalysisService.generateOptimizationSuggestions(null);
             return ResponseEntity.ok(suggestions);
         } catch (Exception e) {
             log.error("Error fetching cost optimization suggestions: {}", e.getMessage(), e);
             return ResponseEntity.internalServerError().build();
         }
     }
-
-    private GpuCostAnalysis buildCostAnalysis(int days) { /* 구현 */ }
-    private List<CostOptimizationSuggestion> generateOptimizationSuggestions() { /* 구현 */ }
+     
 }

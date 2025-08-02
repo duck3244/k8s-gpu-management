@@ -68,6 +68,15 @@ public class GpuDevice {
     
     @Column(name = "vbios_version", length = 20)
     private String vbiosVersion;
+
+    // getter/setter
+    public String getVbiosVersion() {
+        return vbiosVersion;
+    }
+    
+    public void setVbiosVersion(String vbiosVersion) {
+        this.vbiosVersion = vbiosVersion;
+    }
     
     @Column(name = "installation_date")
     private LocalDateTime installationDate;

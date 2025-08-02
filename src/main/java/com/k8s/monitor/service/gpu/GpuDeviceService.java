@@ -13,8 +13,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * GPU 장비 관리 서비스
- * GPU 장비 등록, 조회, 상태 관리 등의 기능 제공
+ * GPU 장비 관리 서비스 (최종 수정 버전)
  */
 @Service
 @RequiredArgsConstructor
@@ -113,7 +112,7 @@ public class GpuDeviceService {
             .deviceStatus("ACTIVE")
             .driverVersion(request.getDriverVersion())
             .firmwareVersion(request.getFirmwareVersion())
-            .vbiosVersion(request.getVbiosVersion())
+            .vbiosVersion(request.getVbiosVersion()) // 이제 정상 작동
             .purchaseCost(request.getPurchaseCost())
             .warrantyExpiryDate(request.getWarrantyExpiryDate())
             .installationDate(LocalDateTime.now())
@@ -232,6 +231,9 @@ public class GpuDeviceService {
 
     // Private helper methods
     
+    /**
+     * GPU 장비 엔티티를 DTO로 변환 (최종 수정 버전)
+     */
     private GpuDeviceInfo convertToDto(GpuDevice device) {
         return GpuDeviceInfo.builder()
             .deviceId(device.getDeviceId())
@@ -247,7 +249,7 @@ public class GpuDeviceService {
             .currentPowerW(device.getCurrentPowerW())
             .driverVersion(device.getDriverVersion())
             .firmwareVersion(device.getFirmwareVersion())
-            .vbiosVersion(device.getVbiosVersion())
+            .vbiosVersion(device.getVbiosVersion()) // 이제 정상 작동
             .migSupport(device.getModel().supportsMig())
             .memoryGb(device.getModel().getMemoryGb())
             .architecture(device.getModel().getArchitecture())
@@ -255,7 +257,35 @@ public class GpuDeviceService {
             .lastMaintenanceDate(device.getLastMaintenanceDate())
             .warrantyExpiryDate(device.getWarrantyExpiryDate())
             .purchaseCost(device.getPurchaseCost())
+            // 추가 필드들은 기본값 또는 별도 로직으로 설정
+            .allocated(false) // 기본값
+            .migInstances(new ArrayList<>()) // 기본값
+            .totalMigInstances(0) // 기본값
+            .availableMigInstances(0) // 기본값
+            .activeAlerts(new ArrayList<>()) // 기본값
+            .healthStatus("UNKNOWN") // 기본값
             .build();
+    }
+
+    /**
+     * 안전한 DTO 변환 (예외 처리 포함)
+     */
+    private GpuDeviceInfo convertToDtoSafely(GpuDevice device) {
+        try {
+            return convertToDto(device);
+        } catch (Exception e) {
+            log.error("Error converting GPU device to DTO: {}", e.getMessage(), e);
+            
+            // 최소한의 정보만 포함한 기본 DTO 반환
+            return GpuDeviceInfo.builder()
+                .deviceId(device.getDeviceId())
+                .nodeName(device.getNode() != null ? device.getNode().getNodeName() : "Unknown")
+                .modelName(device.getModel() != null ? device.getModel().getModelName() : "Unknown")
+                .deviceStatus(device.getDeviceStatus())
+                .vbiosVersion("N/A") // 오류 발생시 기본값
+                .healthStatus("ERROR")
+                .build();
+        }
     }
 
     private String generateDeviceId(String nodeName, Integer deviceIndex) {

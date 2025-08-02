@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * GPU 장비 정보 DTO
+ * GPU 장비 정보 DTO (수정된 버전)
  */
 @Data
 @Builder
@@ -37,6 +37,7 @@ public class GpuDeviceInfo {
     // 하드웨어 정보
     private String driverVersion;
     private String firmwareVersion;
+    private String vbiosVersion; // 추가된 필드
     private Boolean migSupport;
     private Integer memoryGb;
     private String architecture;
