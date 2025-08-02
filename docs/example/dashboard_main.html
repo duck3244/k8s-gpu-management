@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPU Management Dashboard - Main</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .dashboard {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 30px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
+        }
+
+        .header {
+            display: flex;
+            justify-content: between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #e9ecef;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            font-weight: 800;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 5px;
+        }
+
+        .header .subtitle {
+            color: #6c757d;
+            font-size: 1.1em;
+        }
+
+        .header .time {
+            text-align: right;
+            color: #495057;
+            font-weight: 500;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 25px;
+            margin-bottom: 40px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            border-left: 5px solid;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 100px;
+            height: 100px;
+            background: linear-gradient(45deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
+            border-radius: 50%;
+            transform: translate(30px, -30px);
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.15);
+        }
+
+        .stat-card.gpu-total { border-left-color: #28a745; }
+        .stat-card.gpu-active { border-left-color: #17a2b8; }
+        .stat-card.gpu-allocated { border-left-color: #ffc107; }
+        .stat-card.gpu-alerts { border-left-color: #dc3545; }
+
+        .stat-icon {
+            font-size: 2.5em;
+            margin-bottom: 15px;
+            opacity: 0.8;
+        }
+
+        .stat-value {
+            font-size: 2.5em;
+            font-weight: 800;
+            margin-bottom: 10px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .stat-label {
+            font-size: 1em;
+            color: #6c757d;
+            font-weight: 500;
+            margin-bottom: 10px;
+        }
+
+        .stat-trend {
+            font-size: 0.9em;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .trend-up { color: #28a745; }
+        .trend-down { color: #dc3545; }
+        .trend-stable { color: #6c757d; }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        .chart-section {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .chart-header {
+            display: flex;
+            justify-content: between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .chart-title {
+            font-size: 1.4em;
+            font-weight: 700;
+            color: #333;
+        }
+
+        .chart-tabs {
+            display: flex;
+            gap: 10px;
+        }
+
+        .chart-tab {
+            padding: 8px 16px;
+            background: #f8f9fa;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .chart-tab.active {
+            background: #667eea;
+            color: white;
+        }
+
+        .chart-area {
+            height: 300px;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .chart-placeholder {
+            color: #6c757d;
+            font-size: 1.1em;
+            text-align: center;
+        }
+
+        .utilization-bars {
+            display: flex;
+            align-items: end;
+            gap: 8px;
+            height: 200px;
+            padding: 20px;
+        }
+
+        .bar {
+            background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+            border-radius: 4px 4px 0 0;
+            min-width: 20px;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .bar:hover {
+            filter: brightness(1.1);
+            transform: scaleY(1.05);
+        }
+
+        .bar-label {
+            position: absolute;
+            bottom: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.8em;
+            color: #6c757d;
+        }
+
+        .recent-activity {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .activity-header {
+            font-size: 1.4em;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .activity-list {
+            max-height: 350px;
+            overflow-y: auto;
+        }
+
+        .activity-item {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            transition: background 0.3s ease;
+        }
+
+        .activity-item:hover {
+            background: #f8f9fa;
+        }
+
+        .activity-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.2em;
+        }
+
+        .activity-icon.success { background: #d4edda; color: #28a745; }
+        .activity-icon.warning { background: #fff3cd; color: #ffc107; }
+        .activity-icon.info { background: #d1ecf1; color: #17a2b8; }
+        .activity-icon.danger { background: #f8d7da; color: #dc3545; }
+
+        .activity-content {
+            flex: 1;
+        }
+
+        .activity-title {
+            font-weight: 600;
+            margin-bottom: 3px;
+        }
+
+        .activity-desc {
+            font-size: 0.9em;
+            color: #6c757d;
+        }
+
+        .activity-time {
+            font-size: 0.8em;
+            color: #adb5bd;
+        }
+
+        .gpu-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 25px;
+        }
+
+        .gpu-node {
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            border-top: 4px solid #667eea;
+        }
+
+        .node-header {
+            display: flex;
+            justify-content: between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .node-name {
+            font-weight: 700;
+            font-size: 1.1em;
+        }
+
+        .node-status {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-online { background: #d4edda; color: #28a745; }
+        .status-busy { background: #fff3cd; color: #ffc107; }
+        .status-offline { background: #f8d7da; color: #dc3545; }
+
+        .gpu-list {
+            space-y: 10px;
+        }
+
+        .gpu-item {
+            display: flex;
+            justify-content: between;
+            align-items: center;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+
+        .gpu-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .gpu-model {
+            font-weight: 600;
+            font-size: 0.9em;
+        }
+
+        .gpu-util {
+            font-size: 0.8em;
+            color: #6c757d;
+        }
+
+        .util-bar {
+            width: 60px;
+            height: 6px;
+            background: #e9ecef;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .util-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #28a745 0%, #ffc107 70%, #dc3545 90%);
+            border-radius: 3px;
+            transition: width 0.5s ease;
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <div class="header">
+            <div>
+                <h1>🚀 GPU Management Dashboard</h1>
+                <div class="subtitle">Kubernetes GPU 리소스 통합 관리</div>
+            </div>
+            <div class="time">
+                <div>2024년 3월 15일</div>
+                <div>14:32:45 KST</div>
+            </div>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card gpu-total">
+                <div class="stat-icon">🖥️</div>
+                <div class="stat-value">24</div>
+                <div class="stat-label">총 GPU 장비</div>
+                <div class="stat-trend trend-stable">
+                    <span>➡️</span> 변동 없음
+                </div>
+            </div>
+
+            <div class="stat-card gpu-active">
+                <div class="stat-icon">✅</div>
+                <div class="stat-value">22</div>
+                <div class="stat-label">활성 GPU</div>
+                <div class="stat-trend trend-up">
+                    <span>📈</span> +2 지난 주 대비
+                </div>
+            </div>
+
+            <div class="stat-card gpu-allocated">
+                <div class="stat-icon">⚡</div>
+                <div class="stat-value">18</div>
+                <div class="stat-label">할당된 GPU</div>
+                <div class="stat-trend trend-up">
+                    <span>📈</span> +3 어제 대비
+                </div>
+            </div>
+
+            <div class="stat-card gpu-alerts">
+                <div class="stat-icon">🚨</div>
+                <div class="stat-value">2</div>
+                <div class="stat-label">활성 알람</div>
+                <div class="stat-trend trend-down">
+                    <span>📉</span> -1 지난 시간 대비
+                </div>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="chart-section">
+                <div class="chart-header">
+                    <div class="chart-title">GPU 사용률 트렌드</div>
+                    <div class="chart-tabs">
+                        <button class="chart-tab active">24시간</button>
+                        <button class="chart-tab">7일</button>
+                        <button class="chart-tab">30일</button>
+                    </div>
+                </div>
+                <div class="chart-area">
+                    <div class="utilization-bars">
+                        <div class="bar" style="height: 60%">
+                            <div class="bar-label">00:00</div>
+                        </div>
+                        <div class="bar" style="height: 45%">
+                            <div class="bar-label">04:00</div>
+                        </div>
+                        <div class="bar" style="height: 30%">
+                            <div class="bar-label">08:00</div>
+                        </div>
+                        <div class="bar" style="height: 75%">
+                            <div class="bar-label">12:00</div>
+                        </div>
+                        <div class="bar" style="height: 85%">
+                            <div class="bar-label">16:00</div>
+                        </div>
+                        <div class="bar" style="height: 70%">
+                            <div class="bar-label">20:00</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="recent-activity">
+                <div class="activity-header">
+                    <span>📋</span> 최근 활동
+                </div>
+                <div class="activity-list">
+                    <div class="activity-item">
+                        <div class="activity-icon success">✓</div>
+                        <div class="activity-content">
+                            <div class="activity-title">GPU 할당 완료</div>
+                            <div class="activity-desc">worker-node-3의 RTX4090이 vllm-pod-1에 할당됨</div>
+                        </div>
+                        <div class="activity-time">2분 전</div>
+                    </div>
+
+                    <div class="activity-item">
+                        <div class="activity-icon warning">⚠</div>
+                        <div class="activity-content">
+                            <div class="activity-title">온도 경고</div>
+                            <div class="activity-desc">worker-node-1의 H100 온도가 86°C로 상승</div>
+                        </div>
+                        <div class="activity-time">5분 전</div>
+                    </div>
+
+                    <div class="activity-item">
+                        <div class="activity-icon info">ℹ</div>
+                        <div class="activity-content">
+                            <div class="activity-title">MIG 인스턴스 생성</div>
+                            <div class="activity-desc">A100에서 7g.80gb 프로필로 MIG 생성</div>
+                        </div>
+                        <div class="activity-time">12분 전</div>
+                    </div>
+
+                    <div class="activity-item">
+                        <div class="activity-icon success">✓</div>
+                        <div class="activity-content">
+                            <div class="activity-title">GPU 해제</div>
+                            <div class="activity-desc">training-job-45 완료로 RTX4090 해제</div>
+                        </div>
+                        <div class="activity-time">18분 전</div>
+                    </div>
+
+                    <div class="activity-item">
+                        <div class="activity-icon danger">✗</div>
+                        <div class="activity-content">
+                            <div class="activity-title">할당 실패</div>
+                            <div class="activity-desc">사용 가능한 GPU가 없어 할당 실패</div>
+                        </div>
+                        <div class="activity-time">25분 전</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="gpu-grid">
+            <div class="gpu-node">
+                <div class="node-header">
+                    <div class="node-name">worker-node-1</div>
+                    <div class="node-status status-online">Online</div>
+                </div>
+                <div class="gpu-list">
+                    <div class="gpu-item">
+                        <div class="gpu-info">
+                            <div class="gpu-model">H100 80GB</div>
+                            <div class="gpu-util">85% 사용중</div>
+                        </div>
+                        <div class="util-bar">
+                            <div class="util-fill" style="width: 85%"></div>
+                        </div>
+                    </div>
+                    <div class="gpu-item">
+                        <div class="gpu-info">
+                            <div class="gpu-model">A100 80GB</div>
+                            <div class="gpu-util">62% 사용중</div>
+                        </div>
+                        <div class="util-bar">
+                            <div class="util-fill" style="width: 62%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="gpu-node">
+                <div class="node-header">
+                    <div class="node-name">worker-node-2</div>
+                    <div class="node-status status-busy">Busy</div>
+                </div>
+                <div class="gpu-list">
+                    <div class="gpu-item">
+                        <div class="gpu-info">
+                            <div class="gpu-model">RTX4090</div>
+                            <div class="gpu-util">92% 사용중</div>
+                        </div>
+                        <div class="util-bar">
+                            <div class="util-fill" style="width: 92%"></div>
+                        </div>
+                    </div>
+                    <div class="gpu-item">
+                        <div class="gpu-info">
+                            <div class="gpu-model">RTX4090</div>
+                            <div class="gpu-util">78% 사용중</div>
+                        </div>
+                        <div class="util-bar">
+                            <div class="util-fill" style="width: 78%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="gpu-node">
+                <div class="node-header">
+                    <div class="node-name">worker-node-3</div>
+                    <div class="node-status status-online">Online</div>
+                </div>
+                <div class="gpu-list">
+                    <div class="gpu-item">
+                        <div class="gpu-info">
+                            <div class="gpu-model">A100 40GB</div>
+                            <div class="gpu-util">34% 사용중</div>
+                        </div>
+                        <div class="util-bar">
+                            <div class="util-fill" style="width: 34%"></div>
+                        </div>
+                    </div>
+                    <div class="gpu-item">
+                        <div class="gpu-info">
+                            <div class="gpu-model">A100 40GB</div>
+                            <div class="gpu-util">45% 사용중</div>
+                        </div>
+                        <div class="util-bar">
+                            <div class="util-fill" style="width: 45%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
