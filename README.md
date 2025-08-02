@@ -263,7 +263,7 @@ Content-Type: application/json
 ## 🖥️ 대시보드
 
 ### 메인 대시보드
-![메인 대시보드](docs/images/dashboard-main.png)
+![메인 대시보드](docs/images/dashboard_main.png)
 
 - **실시간 클러스터 상태** 모니터링
 - **GPU 사용률** 및 **온도** 추적
@@ -271,7 +271,7 @@ Content-Type: application/json
 - **알람 및 이슈** 관리
 
 ### GPU 관리 화면
-![GPU 관리](docs/images/dashboard-gpu.png)
+![GPU 관리](docs/images/dashboard_gpu.png)
 
 - **GPU 장비 인벤토리**
 - **MIG 인스턴스 관리**
@@ -279,7 +279,7 @@ Content-Type: application/json
 - **성능 메트릭** 시각화
 
 ### 비용 분석 화면
-![비용 분석](docs/images/dashboard-cost.png)
+![비용 분석](docs/images/dashboard_cost.png)
 
 - **팀별/프로젝트별** 비용 분석
 - **사용 패턴** 트렌드
