@@ -12,10 +12,9 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
- * GPU 메트릭 수집 서비스 (수정된 버전)
+ * GPU 메트릭 수집 서비스 (최종 수정 버전)
  * nvidia-smi를 통한 GPU 메트릭 수집 및 저장
  */
 @Service
@@ -28,45 +27,64 @@ public class GpuMetricsCollectionService {
     private final MigInstanceRepository migInstanceRepository;
 
     /**
-     * GPU 메트릭 수집 (스케줄러) - 메서드명 변경으로 중복 해결
+     * GPU 메트릭 수집 (스케줄러)
      */
     @Scheduled(fixedRate = 30000) // 30초마다 실행
     @Transactional
     public void collectGpuMetricsScheduled() {
         try {
             log.debug("Starting scheduled GPU metrics collection");
-            
-            List<GpuDevice> activeDevices = gpuDeviceRepository.findByDeviceStatus("ACTIVE");
-            List<GpuDevice> migEnabledDevices = gpuDeviceRepository.findByDeviceStatus("MIG_ENABLED");
-            
-            // 일반 GPU 메트릭 수집
-            for (GpuDevice device : activeDevices) {
-                collectDeviceMetrics(device);
-            }
-            
-            // MIG 인스턴스 메트릭 수집
-            for (GpuDevice device : migEnabledDevices) {
-                List<MigInstance> instances = migInstanceRepository.findByDeviceDeviceId(device.getDeviceId());
-                for (MigInstance instance : instances) {
-                    if ("ACTIVE".equals(instance.getInstanceStatus())) {
-                        collectMigInstanceMetrics(instance);
-                    }
-                }
-            }
-            
-            log.debug("GPU metrics collection completed");
+            performMetricsCollection();
+            log.debug("Scheduled GPU metrics collection completed");
             
         } catch (Exception e) {
-            log.error("Error during GPU metrics collection: {}", e.getMessage(), e);
+            log.error("Error during scheduled GPU metrics collection: {}", e.getMessage(), e);
         }
     }
 
     /**
-     * 수동 GPU 메트릭 수집 트리거 - 다른 메서드명 사용
+     * 수동 GPU 메트릭 수집 트리거 - 컨트롤러에서 호출
+     */
+    public void collectGpuMetrics() {
+        log.info("Manual GPU metrics collection triggered via API");
+        try {
+            performMetricsCollection();
+            log.info("Manual GPU metrics collection completed successfully");
+        } catch (Exception e) {
+            log.error("Error during manual GPU metrics collection: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to collect GPU metrics: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 수동 메트릭 수집 트리거 - 다른 이름의 메서드
      */
     public void triggerMetricsCollection() {
-        log.info("Manual GPU metrics collection triggered");
-        collectGpuMetricsScheduled(); // 스케줄 메서드 재사용
+        log.info("Triggering GPU metrics collection");
+        collectGpuMetrics();
+    }
+
+    /**
+     * 실제 메트릭 수집 로직 - 공통 메서드
+     */
+    private void performMetricsCollection() {
+        List<GpuDevice> activeDevices = gpuDeviceRepository.findByDeviceStatus("ACTIVE");
+        List<GpuDevice> migEnabledDevices = gpuDeviceRepository.findByDeviceStatus("MIG_ENABLED");
+        
+        // 일반 GPU 메트릭 수집
+        for (GpuDevice device : activeDevices) {
+            collectDeviceMetrics(device);
+        }
+        
+        // MIG 인스턴스 메트릭 수집
+        for (GpuDevice device : migEnabledDevices) {
+            List<MigInstance> instances = migInstanceRepository.findByDeviceDeviceId(device.getDeviceId());
+            for (MigInstance instance : instances) {
+                if ("ACTIVE".equals(instance.getInstanceStatus())) {
+                    collectMigInstanceMetrics(instance);
+                }
+            }
+        }
     }
 
     /**
@@ -109,12 +127,97 @@ public class GpuMetricsCollectionService {
         
         try {
             List<GpuUsageMetrics> overheatingMetrics = metricsRepository.findOverheatingMetrics(85.0, since);
-            
             return convertOverheatingMetrics(overheatingMetrics);
             
         } catch (Exception e) {
             log.error("Error getting overheating alerts: {}", e.getMessage(), e);
             return new ArrayList<>();
+        }
+    }
+
+    /**
+     * 메트릭 수집 상태 조회
+     */
+    public Map<String, Object> getMetricsCollectionStatus() {
+        try {
+            LocalDateTime oneHourAgo = LocalDateTime.now().minusHours(1);
+            long recentMetricsCount = metricsRepository.countMetricsBetween(oneHourAgo, LocalDateTime.now());
+            
+            boolean isHealthy = recentMetricsCount > 0;
+            
+            return Map.of(
+                "status", isHealthy ? "HEALTHY" : "UNHEALTHY",
+                "recentMetricsCount", recentMetricsCount,
+                "lastCollection", LocalDateTime.now(),
+                "collectionInterval", "30 seconds",
+                "isActive", true,
+                "lastCheck", LocalDateTime.now()
+            );
+            
+        } catch (Exception e) {
+            log.error("Error getting collection status: {}", e.getMessage());
+            return Map.of(
+                "status", "ERROR",
+                "error", e.getMessage(),
+                "lastCheck", LocalDateTime.now()
+            );
+        }
+    }
+
+    /**
+     * 특정 장비의 최근 메트릭 조회
+     */
+    public Map<String, Object> getDeviceRecentMetrics(String deviceId, int hours) {
+        try {
+            LocalDateTime since = LocalDateTime.now().minusHours(hours);
+            Object[] avgUsage = metricsRepository.findAverageUsageByDevice(deviceId, since);
+            
+            Map<String, Object> metrics = new HashMap<>();
+            
+            if (avgUsage != null && avgUsage.length >= 4) {
+                metrics.put("deviceId", deviceId);
+                metrics.put("avgGpuUtilization", avgUsage[0]);
+                metrics.put("avgMemoryUtilization", avgUsage[1]);
+                metrics.put("avgTemperature", avgUsage[2]);
+                metrics.put("avgPowerDraw", avgUsage[3]);
+                metrics.put("timeRange", hours + " hours");
+                metrics.put("timestamp", LocalDateTime.now());
+            } else {
+                metrics.put("deviceId", deviceId);
+                metrics.put("message", "No metrics data available");
+                metrics.put("timeRange", hours + " hours");
+                metrics.put("timestamp", LocalDateTime.now());
+            }
+            
+            return metrics;
+        } catch (Exception e) {
+            log.error("Error getting device metrics for {}: {}", deviceId, e.getMessage());
+            return Map.of(
+                "deviceId", deviceId,
+                "error", e.getMessage(),
+                "timestamp", LocalDateTime.now()
+            );
+        }
+    }
+
+    /**
+     * 메트릭 데이터 수동 정리
+     */
+    @Transactional
+    public int cleanupOldMetricsManual(int olderThanDays) {
+        LocalDateTime cutoff = LocalDateTime.now().minusDays(olderThanDays);
+        
+        try {
+            int deletedCount = metricsRepository.deleteOldMetrics(cutoff);
+            
+            if (deletedCount > 0) {
+                log.info("Manually cleaned up {} old GPU metrics records", deletedCount);
+            }
+            
+            return deletedCount;
+        } catch (Exception e) {
+            log.error("Error during manual metrics cleanup: {}", e.getMessage(), e);
+            throw e;
         }
     }
 
