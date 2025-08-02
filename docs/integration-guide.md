@@ -714,7 +714,7 @@ output {
 
 # Kubernetes Secret 생성
 kubectl create secret generic slack-webhook \
-  --from-literal=url='https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX' \
+  --from-literal=url='https://hooks.slack.com/services/.../.../XXXXXXXXXX' \
   -n gpu-management
 ```
 
