@@ -1,0 +1,311 @@
+# GPU 비용 관리 알람 규칙 정의
+# GPU 사용 비용, 예산, 최적화 기회에 대한 알람 설정
+
+groups:
+  - name: cost.budget.rules
+    interval: 5m
+    rules:
+      # 예산 관련 알람
+      - alert: DailyBudgetExceeded
+        expr: sum(gpu_daily_cost) > gpu_daily_budget_limit
+        for: 1h
+        labels:
+          severity: critical
+          category: budget
+          component: daily_cost
+        annotations:
+          summary: "일일 GPU 예산 초과"
+          description: "일일 GPU 비용이 ${{ $value }}로 예산 한도 ${{ $labels.gpu_daily_budget_limit }}를 초과했습니다."
+          runbook_url: "https://wiki.company.com/runbooks/budget-exceeded"
+
+      - alert: MonthlyBudgetNearLimit
+        expr: (sum(gpu_monthly_cost) / gpu_monthly_budget_limit) > 0.85
+        for: 30m
+        labels:
+          severity: warning
+          category: budget
+          component: monthly_cost
+        annotations:
+          summary: "월간 GPU 예산 한계 근접"
+          description: "월간 GPU 비용이 예산의 {{ $value | humanizePercentage }}에 도달했습니다. 현재 비용: ${{ $labels.gpu_monthly_cost }}, 예산: ${{ $labels.gpu_monthly_budget_limit }}"
+
+      - alert: MonthlyBudgetExceeded
+        expr: sum(gpu_monthly_cost) > gpu_monthly_budget_limit
+        for: 1h
+        labels:
+          severity: critical
+          category: budget
+          component: monthly_cost
+        annotations:
+          summary: "월간 GPU 예산 초과"
+          description: "월간 GPU 비용이 ${{ $value }}로 예산 한도 ${{ $labels.gpu_monthly_budget_limit }}를 초과했습니다."
+
+      - alert: QuarterlyBudgetProjection
+        expr: (sum(gpu_quarterly_cost) / gpu_quarterly_budget_limit) > 0.9
+        for: 2h
+        labels:
+          severity: warning
+          category: budget
+          component: quarterly_cost
+        annotations:
+          summary: "분기 GPU 예산 초과 예상"
+          description: "현재 추세로는 분기 GPU 예산을 {{ $value | humanizePercentage }} 초과할 것으로 예상됩니다."
+
+  - name: cost.usage.rules
+    interval: 10m
+    rules:
+      # 사용량 기반 비용 알람
+      - alert: HighCostPerHour
+        expr: sum(gpu_cost_per_hour) > 200
+        for: 30m
+        labels:
+          severity: warning
+          category: cost
+          component: hourly_rate
+        annotations:
+          summary: "높은 시간당 GPU 비용"
+          description: "현재 시간당 GPU 비용이 ${{ $value }}로 $200를 30분 이상 초과하고 있습니다."
+
+      - alert: UnusedGPUCost
+        expr: sum(gpu_cost_per_hour{gpu_utilization="0-10"}) > 50
+        for: 2h
+        labels:
+          severity: warning
+          category: waste
+          component: unused_resources
+        annotations:
+          summary: "미사용 GPU로 인한 비용 낭비"
+          description: "사용률 10% 미만 GPU로 인해 시간당 ${{ $value }}의 비용이 2시간 이상 발생하고 있습니다."
+
+      - alert: LowUtilizationHighCost
+        expr: sum(gpu_cost_per_hour{gpu_utilization="10-30"}) > 75
+        for: 4h
+        labels:
+          severity: info
+          category: efficiency
+          component: low_utilization
+        annotations:
+          summary: "낮은 사용률로 인한 비효율적 비용"
+          description: "사용률 30% 미만 GPU로 인해 시간당 ${{ $value }}의 비용이 4시간 이상 발생하고 있습니다."
+
+      - alert: HighEndGPULowUsage
+        expr: sum(gpu_cost_per_hour{gpu_model=~"A100.*|H100.*",gpu_utilization="0-50"}) > 100
+        for: 1h
+        labels:
+          severity: warning
+          category: efficiency
+          component: premium_gpu_waste
+        annotations:
+          summary: "고급 GPU 저사용률"
+          description: "고급 GPU(A100/H100)의 낮은 사용률로 인해 시간당 ${{ $value }}의 비용이 낭비되고 있습니다."
+
+  - name: cost.allocation.rules
+    interval: 15m
+    rules:
+      # 할당별 비용 알람
+      - alert: LongRunningExpensiveAllocation
+        expr: gpu_allocation_cost > 500 and gpu_allocation_duration_hours > 72
+        for: 1h
+        labels:
+          severity: warning
+          category: cost
+          component: allocation
+        annotations:
+          summary: "장기간 고비용 GPU 할당"
+          description: "할당 {{ $labels.allocation_id }}가 72시간 이상 실행되어 ${{ $value }}의 비용이 발생했습니다."
+
+      - alert: AllocationCostSpike
+        expr: increase(gpu_allocation_cost[1h]) > 100
+        for: 0m
+        labels:
+          severity: warning
+          category: cost
+          component: allocation_spike
+        annotations:
+          summary: "GPU 할당 비용 급증"
+          description: "할당 {{ $labels.allocation_id }}의 1시간 비용이 ${{ $value }}로 급증했습니다."
+
+      - alert: ExpiredAllocationStillCharging
+        expr: gpu_allocation_status == "expired" and gpu_allocation_cost_increment > 0
+        for: 30m
+        labels:
+          severity: critical
+          category: billing
+          component: allocation_error
+        annotations:
+          summary: "만료된 할당의 지속적 과금"
+          description: "만료된 할당 {{ $labels.allocation_id }}에 대해 여전히 과금이 발생하고 있습니다."
+
+  - name: cost.team.rules
+    interval: 20m
+    rules:
+      # 팀별 비용 알람
+      - alert: TeamBudgetExceeded
+        expr: sum(gpu_team_daily_cost) by (team_id) > gpu_team_daily_budget
+        for: 2h
+        labels:
+          severity: warning
+          category: budget
+          component: team_cost
+        annotations:
+          summary: "팀 일일 GPU 예산 초과"
+          description: "팀 {{ $labels.team_id }}의 일일 GPU 비용이 ${{ $value }}로 예산 ${{ $labels.gpu_team_daily_budget }}를 초과했습니다."
+
+      - alert: TeamCostAnomaly
+        expr: (sum(gpu_team_daily_cost) by (team_id) / avg_over_time(sum(gpu_team_daily_cost) by (team_id)[7d])) > 2
+        for: 4h
+        labels:
+          severity: info
+          category: anomaly
+          component: team_cost
+        annotations:
+          summary: "팀 GPU 비용 이상 증가"
+          description: "팀 {{ $labels.team_id }}의 GPU 비용이 주간 평균 대비 {{ $value }}배 증가했습니다."
+
+      - alert: TeamHighCostLowValue
+        expr: (sum(gpu_team_daily_cost) by (team_id) / sum(gpu_team_compute_hours) by (team_id)) > 50
+        for: 6h
+        labels:
+          severity: info
+          category: efficiency
+          component: team_value
+        annotations:
+          summary: "팀 GPU 단위 비용 높음"
+          description: "팀 {{ $labels.team_id }}의 GPU 시간당 비용이 ${{ $value }}로 높습니다."
+
+  - name: cost.project.rules
+    interval: 30m
+    rules:
+      # 프로젝트별 비용 알람
+      - alert: ProjectBudgetCritical
+        expr: (sum(gpu_project_monthly_cost) by (project_id) / gpu_project_monthly_budget) > 0.95
+        for: 1h
+        labels:
+          severity: critical
+          category: budget
+          component: project_cost
+        annotations:
+          summary: "프로젝트 월간 예산 임계 상태"
+          description: "프로젝트 {{ $labels.project_id }}의 월간 GPU 비용이 예산의 {{ $value | humanizePercentage }}에 도달했습니다."
+
+      - alert: ProjectUnauthorizedCost
+        expr: sum(gpu_project_cost{approval_status="pending"}) by (project_id) > 100
+        for: 1h
+        labels:
+          severity: warning
+          category: governance
+          component: project_approval
+        annotations:
+          summary: "프로젝트 미승인 GPU 비용 발생"
+          description: "프로젝트 {{ $labels.project_id }}에서 승인되지 않은 GPU 사용으로 ${{ $value }}의 비용이 발생했습니다."
+
+      - alert: ProjectIdleResources
+        expr: sum(gpu_project_cost{project_status="inactive"}) by (project_id) > 20
+        for: 24h
+        labels:
+          severity: info
+          category: waste
+          component: project_cleanup
+        annotations:
+          summary: "비활성 프로젝트 GPU 비용"
+          description: "비활성 프로젝트 {{ $labels.project_id }}에서 24시간 동안 ${{ $value }}의 GPU 비용이 발생했습니다."
+
+  - name: cost.optimization.rules
+    interval: 1h
+    rules:
+      # 비용 최적화 기회 알람
+      - alert: MIGOptimizationOpportunity
+        expr: sum(gpu_cost_full_gpu{gpu_utilization="0-50"}) > 100 and sum(mig_available_instances) > 10
+        for: 2h
+        labels:
+          severity: info
+          category: optimization
+          component: mig_opportunity
+        annotations:
+          summary: "MIG 사용 최적화 기회"
+          description: "낮은 사용률의 풀 GPU로 ${{ $value }}/시간 비용이 발생하고 있으며, {{ $labels.mig_available_instances }}개의 MIG 인스턴스가 사용 가능합니다."
+
+      - alert: SchedulingOptimizationOpportunity
+        expr: sum(gpu_cost_peak_hours) / sum(gpu_cost_off_peak_hours) > 1.5
+        for: 4h
+        labels:
+          severity: info
+          category: optimization
+          component: scheduling
+        annotations:
+          summary: "GPU 스케줄링 최적화 기회"
+          description: "피크 시간 GPU 비용이 오프피크 대비 {{ $value }}배 높습니다. 스케줄링 최적화를 고려하세요."
+
+      - alert: RightSizingOpportunity
+        expr: sum(gpu_cost_oversized_allocations) > 50
+        for: 6h
+        labels:
+          severity: info
+          category: optimization
+          component: rightsizing
+        annotations:
+          summary: "GPU 적정 크기 조정 기회"
+          description: "과대 할당된 GPU로 인해 시간당 ${{ $value }}의 추가 비용이 발생하고 있습니다."
+
+      - alert: RegionCostOptimization
+        expr: (sum(gpu_cost_region_premium) by (region) / sum(gpu_cost_region_standard) by (region)) > 1.3
+        for: 8h
+        labels:
+          severity: info
+          category: optimization
+          component: region_cost
+        annotations:
+          summary: "지역별 GPU 비용 최적화 기회"
+          description: "지역 {{ $labels.region }}의 GPU 비용이 표준 지역 대비 {{ $value }}배 높습니다."
+
+  - name: cost.prediction.rules
+    interval: 4h
+    rules:
+      # 비용 예측 알람
+      - alert: CostTrendIncreasing
+        expr: predict_linear(sum(gpu_daily_cost)[7d:1d], 7*24*3600) > sum(gpu_daily_cost) * 1.5
+        for: 12h
+        labels:
+          severity: warning
+          category: prediction
+          component: cost_trend
+        annotations:
+          summary: "GPU 비용 상승 추세 예측"
+          description: "현재 추세로는 일주일 후 일일 GPU 비용이 ${{ $value }}로 현재 대비 50% 증가할 것으로 예상됩니다."
+
+      - alert: SeasonalCostSpike
+        expr: gpu_predicted_seasonal_peak > gpu_monthly_budget_limit * 1.2
+        for: 1h
+        labels:
+          severity: info
+          category: prediction
+          component: seasonal_cost
+        annotations:
+          summary: "계절적 GPU 비용 급증 예상"
+          description: "계절적 패턴을 고려할 때 GPU 비용이 ${{ $value }}까지 증가하여 월간 예산을 20% 초과할 것으로 예상됩니다."
+
+  - name: cost.alert.rules
+    interval: 1h
+    rules:
+      # 비용 알람 메타 규칙
+      - alert: CostAlertsHigh
+        expr: count(ALERTS{alertname=~".*Cost.*|.*Budget.*"}) > 10
+        for: 30m
+        labels:
+          severity: warning
+          category: meta
+          component: cost_alerts
+        annotations:
+          summary: "높은 수준의 비용 관련 알람"
+          description: "현재 {{ $value }}개의 비용 관련 알람이 활성화되어 있습니다. 비용 관리 검토가 필요합니다."
+
+      - alert: CriticalCostAlertsActive
+        expr: count(ALERTS{alertname=~".*Cost.*|.*Budget.*",severity="critical"}) > 3
+        for: 15m
+        labels:
+          severity: critical
+          category: meta
+          component: critical_cost_alerts
+        annotations:
+          summary: "중요한 비용 알람 다수 활성화"
+          description: "{{ $value }}개의 중요한 비용 알람이 활성화되어 있습니다. 즉시 조치가 필요합니다."

@@ -1,0 +1,52 @@
+# Grafana Plugins for GPU Management Dashboards
+# Core visualization panels
+grafana-piechart-panel
+grafana-worldmap-panel
+grafana-clock-panel
+grafana-simple-json-datasource
+
+# Advanced chart and table plugins
+natel-discrete-panel
+vonage-status-panel
+jdbranham-diagram-panel
+briangann-gauge-panel
+blackmirror1-statusbygroup-panel
+
+# Text and annotation plugins
+marcusolsson-dynamictext-panel
+marcusolsson-hexmap-panel
+marcusolsson-treemap-panel
+
+# Alerting and notification plugins
+grafana-telegram-bot
+grafana-slack-bot
+
+# Data source plugins
+prometheus-datasource
+simplejson-datasource
+infinity-datasource
+redis-datasource
+
+# GPU specific monitoring plugins
+nvidia-gpu-metrics-plugin
+gpu-utilization-panel
+system-stats-panel
+
+# Performance and infrastructure plugins
+node-graph-panel
+heatmap-panel
+stat-panel
+table-panel
+timeseries-panel
+logs-panel
+
+# Custom business plugins for cost analysis
+cost-analysis-panel
+resource-allocation-panel
+workload-optimizer-panel
+
+# Additional utility plugins
+flowcharting-panel
+button-panel
+breadcrumb-panel
+toast-panel

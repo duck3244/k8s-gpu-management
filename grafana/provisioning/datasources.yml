@@ -1,0 +1,76 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus-server.monitoring.svc.cluster.local:80
+    isDefault: true
+    editable: true
+    uid: prometheus
+    jsonData:
+      httpMethod: POST
+      manageAlerts: true
+      prometheusType: Prometheus
+      prometheusVersion: 2.40.0
+      cacheLevel: 'High'
+      incrementalQuerying: true
+      incrementalQueryOverlapWindow: 10m
+      queryTimeout: 60s
+      defaultEditor: code
+    secureJsonData: {}
+
+  - name: K8s GPU Monitor API
+    type: simplejson
+    access: proxy
+    url: http://k8s-gpu-monitor.k8s-monitoring.svc.cluster.local:80/k8s-monitor/api/v1
+    isDefault: false
+    editable: true
+    uid: k8s-gpu-api
+    jsonData:
+      httpMethod: GET
+      timeout: 30
+    basicAuth: false
+    withCredentials: false
+
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki.monitoring.svc.cluster.local:3100
+    isDefault: false
+    editable: true
+    uid: loki
+    jsonData:
+      maxLines: 1000
+      derivedFields:
+        - datasourceUid: tempo
+          matcherRegex: "traceID=(\\w+)"
+          name: TraceID
+          url: "$${__value.raw}"
+
+  - name: Tempo
+    type: tempo
+    access: proxy
+    url: http://tempo.monitoring.svc.cluster.local:3100
+    isDefault: false
+    editable: true
+    uid: tempo
+    jsonData:
+      httpMethod: GET
+      tracesToLogs:
+        datasourceUid: loki
+        tags: ['job', 'instance', 'pod', 'namespace']
+        mappedTags: [{ key: 'service.name', value: 'service' }]
+        mapTagNamesEnabled: false
+        spanStartTimeShift: '1h'
+        spanEndTimeShift: '1h'
+        filterByTraceID: false
+        filterBySpanID: false
+        lokiSearch: true
+
+  - name: TestData DB
+    type: testdata
+    access: proxy
+    isDefault: false
+    editable: true
+    uid: testdata

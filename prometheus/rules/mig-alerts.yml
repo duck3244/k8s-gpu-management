@@ -1,0 +1,354 @@
+# MIG (Multi-Instance GPU) 알람 규칙 정의
+# MIG 인스턴스 관련 모니터링 및 알람 설정
+
+groups:
+  - name: mig.rules
+    interval: 30s
+    rules:
+      # MIG 인스턴스 사용률 알람
+      - alert: MIGHighUtilization
+        expr: mig_gpu_utilization_percent > 90
+        for: 10m
+        labels:
+          severity: warning
+          category: performance
+          component: mig
+        annotations:
+          summary: "MIG 인스턴스 높은 사용률"
+          description: "MIG 인스턴스 {{ $labels.mig_id }} (GPU: {{ $labels.gpu_id }}, 노드: {{ $labels.node }})의 사용률이 {{ $value }}%로 10분 이상 90%를 초과했습니다."
+
+      - alert: MIGLowUtilization
+        expr: mig_gpu_utilization_percent < 5 and mig_allocation_status == "allocated"
+        for: 2h
+        labels:
+          severity: info
+          category: efficiency
+          component: mig
+        annotations:
+          summary: "MIG 인스턴스 낮은 사용률"
+          description: "할당된 MIG 인스턴스 {{ $labels.mig_id }}의 사용률이 {{ $value }}%로 2시간 이상 5% 미만입니다."
+
+      # MIG 메모리 사용률 알람
+      - alert: MIGHighMemoryUsage
+        expr: (mig_memory_used_mb / mig_memory_total_mb) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          category: resource
+          component: mig_memory
+        annotations:
+          summary: "MIG 인스턴스 높은 메모리 사용률"
+          description: "MIG 인스턴스 {{ $labels.mig_id }}의 메모리 사용률이 {{ $value }}%로 85%를 초과했습니다."
+
+      - alert: MIGMemoryFull
+        expr: (mig_memory_used_mb / mig_memory_total_mb) * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+          category: resource
+          component: mig_memory
+        annotations:
+          summary: "MIG 인스턴스 메모리 거의 만료"
+          description: "MIG 인스턴스 {{ $labels.mig_id }}의 메모리 사용률이 {{ $value }}%로 거의 만료 상태입니다."
+
+      # MIG 인스턴스 상태 알람
+      - alert: MIGInstanceDown
+        expr: mig_instance_status != 1
+        for: 2m
+        labels:
+          severity: critical
+          category: availability
+          component: mig
+        annotations:
+          summary: "MIG 인스턴스 비활성 상태"
+          description: "MIG 인스턴스 {{ $labels.mig_id }} (GPU: {{ $labels.gpu_id }})가 비활성 상태입니다."
+
+      - alert: MIGInstanceStuck
+        expr: mig_allocation_status == "allocated" and mig_gpu_utilization_percent == 0
+        for: 1h
+        labels:
+          severity: warning
+          category: management
+          component: mig
+        annotations:
+          summary: "MIG 인스턴스 할당 상태 이상"
+          description: "MIG 인스턴스 {{ $labels.mig_id }}가 할당된 상태이지만 1시간 이상 사용되지 않고 있습니다."
+
+      # MIG 할당 관련 알람
+      - alert: MIGAllocationFailed
+        expr: increase(mig_allocation_failures_total[10m]) > 3
+        for: 0m
+        labels:
+          severity: warning
+          category: management
+          component: mig_allocation
+        annotations:
+          summary: "MIG 할당 실패 증가"
+          description: "지난 10분간 MIG 할당 실패가 {{ $value }}회 발생했습니다."
+
+      - alert: MIGNoAvailableInstances
+        expr: mig_available_instances == 0 and mig_allocation_requests > 0
+        for: 5m
+        labels:
+          severity: warning
+          category: capacity
+          component: mig
+        annotations:
+          summary: "사용 가능한 MIG 인스턴스 없음"
+          description: "사용 가능한 MIG 인스턴스가 없지만 할당 요청이 {{ $labels.mig_allocation_requests }}개 대기 중입니다."
+
+      # MIG 프로필별 알람
+      - alert: MIGProfileImbalance
+        expr: (mig_profile_allocated_count / mig_profile_total_count) > 0.9
+        for: 10m
+        labels:
+          severity: info
+          category: capacity
+          component: mig_profile
+        annotations:
+          summary: "MIG 프로필 높은 사용률"
+          description: "MIG 프로필 {{ $labels.profile_name }}의 사용률이 {{ $value | humanizePercentage }}로 90%를 초과했습니다."
+
+      - alert: MIGProfileUnused
+        expr: mig_profile_allocated_count == 0 and mig_profile_total_count > 0
+        for: 24h
+        labels:
+          severity: info
+          category: efficiency
+          component: mig_profile
+        annotations:
+          summary: "사용되지 않는 MIG 프로필"
+          description: "MIG 프로필 {{ $labels.profile_name }}이 24시간 이상 사용되지 않고 있습니다."
+
+  - name: mig.device.rules
+    interval: 1m
+    rules:
+      # GPU 장비별 MIG 상태 알람
+      - alert: MIGDeviceHighFragmentation
+        expr: (mig_device_total_instances - mig_device_allocated_instances) > 3 and (mig_device_allocated_instances / mig_device_total_instances) < 0.3
+        for: 30m
+        labels:
+          severity: warning
+          category: efficiency
+          component: mig_device
+        annotations:
+          summary: "MIG 장비 높은 파편화"
+          description: "GPU {{ $labels.gpu_id }}의 MIG 인스턴스가 파편화되어 효율성이 떨어집니다. 총 {{ $labels.mig_device_total_instances }}개 중 {{ $labels.mig_device_allocated_instances }}개만 할당됨."
+
+      - alert: MIGDeviceCreationFailed
+        expr: increase(mig_device_creation_failures[10m]) > 2
+        for: 0m
+        labels:
+          severity: critical
+          category: management
+          component: mig_device
+        annotations:
+          summary: "MIG 인스턴스 생성 실패"
+          description: "GPU {{ $labels.gpu_id }}에서 지난 10분간 MIG 인스턴스 생성이 {{ $value }}회 실패했습니다."
+
+      - alert: MIGDeviceNotSupported
+        expr: mig_device_support_status == 0 and mig_creation_requested == 1
+        for: 1m
+        labels:
+          severity: warning
+          category: compatibility
+          component: mig_device
+        annotations:
+          summary: "MIG 미지원 GPU에서 MIG 생성 시도"
+          description: "MIG를 지원하지 않는 GPU {{ $labels.gpu_id }} (모델: {{ $labels.gpu_model }})에서 MIG 생성이 시도되었습니다."
+
+  - name: mig.performance.rules
+    interval: 1m
+    rules:
+      # MIG 성능 관련 알람
+      - alert: MIGPerformanceDegraded
+        expr: mig_performance_ratio < 0.7
+        for: 15m
+        labels:
+          severity: warning
+          category: performance
+          component: mig
+        annotations:
+          summary: "MIG 인스턴스 성능 저하"
+          description: "MIG 인스턴스 {{ $labels.mig_id }}의 성능 비율이 {{ $value | humanizePercentage }}로 예상 성능의 70% 미만입니다."
+
+      - alert: MIGThermalThrottling
+        expr: mig_thermal_throttle_count > 0
+        for: 5m
+        labels:
+          severity: warning
+          category: hardware
+          component: mig
+        annotations:
+          summary: "MIG 인스턴스 열 제한"
+          description: "MIG 인스턴스 {{ $labels.mig_id }}에서 열 제한으로 인한 스로틀링이 {{ $value }}회 발생했습니다."
+
+      - alert: MIGClockSpeedLow
+        expr: mig_sm_clock_mhz < 1000
+        for: 10m
+        labels:
+          severity: info
+          category: performance
+          component: mig
+        annotations:
+          summary: "MIG 인스턴스 낮은 클럭 속도"
+          description: "MIG 인스턴스 {{ $labels.mig_id }}의 SM 클럭이 {{ $value }}MHz로 10분 이상 1000MHz 미만입니다."
+
+  - name: mig.cost.rules
+    interval: 5m
+    rules:
+      # MIG 비용 관련 알람
+      - alert: MIGHighCostPerHour
+        expr: sum(mig_cost_per_hour) by (node) > 50
+        for: 30m
+        labels:
+          severity: warning
+          category: cost
+          component: mig
+        annotations:
+          summary: "노드 높은 MIG 시간당 비용"
+          description: "노드 {{ $labels.node }}의 MIG 시간당 비용이 ${{ $value }}로 $50를 초과했습니다."
+
+      - alert: MIGUnusedCost
+        expr: sum(mig_cost_per_hour{utilization="low"}) > 10
+        for: 1h
+        labels:
+          severity: info
+          category: cost
+          component: mig
+        annotations:
+          summary: "사용되지 않는 MIG 비용 발생"
+          description: "낮은 사용률의 MIG 인스턴스로 인해 시간당 ${{ $value }}의 비용이 발생하고 있습니다."
+
+      - alert: MIGCostOptimizationOpportunity
+        expr: (sum(mig_cost_per_hour{profile_type="large"}) / sum(mig_cost_per_hour)) > 0.7 and avg(mig_gpu_utilization_percent{profile_type="large"}) < 50
+        for: 2h
+        labels:
+          severity: info
+          category: cost
+          component: mig_optimization
+        annotations:
+          summary: "MIG 비용 최적화 기회"
+          description: "대형 MIG 프로필의 비용 비율이 {{ $value | humanizePercentage }}이지만 평균 사용률이 50% 미만입니다. 소형 프로필 사용을 고려하세요."
+
+  - name: mig.management.rules
+    interval: 1m
+    rules:
+      # MIG 관리 관련 알람
+      - alert: MIGManagementServiceDown
+        expr: up{job="mig-management"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: availability
+          component: mig_management
+        annotations:
+          summary: "MIG 관리 서비스 중단"
+          description: "MIG 관리 서비스가 응답하지 않습니다."
+
+      - alert: MIGCleanupRequired
+        expr: mig_unused_instances_count > 5
+        for: 1h
+        labels:
+          severity: info
+          category: maintenance
+          component: mig_cleanup
+        annotations:
+          summary: "MIG 정리 작업 필요"
+          description: "{{ $value }}개의 미사용 MIG 인스턴스가 1시간 이상 방치되어 있습니다."
+
+      - alert: MIGConfigurationDrift
+        expr: mig_expected_instances != mig_actual_instances
+        for: 10m
+        labels:
+          severity: warning
+          category: configuration
+          component: mig_config
+        annotations:
+          summary: "MIG 구성 불일치"
+          description: "GPU {{ $labels.gpu_id }}의 예상 MIG 인스턴스 수({{ $labels.mig_expected_instances }})와 실제 수({{ $labels.mig_actual_instances }})가 일치하지 않습니다."
+
+      - alert: MIGProfileLimitReached
+        expr: mig_profile_allocated_count >= mig_profile_max_instances
+        for: 5m
+        labels:
+          severity: warning
+          category: capacity
+          component: mig_profile
+        annotations:
+          summary: "MIG 프로필 한계 도달"
+          description: "MIG 프로필 {{ $labels.profile_name }}이 최대 인스턴스 수 {{ $labels.mig_profile_max_instances }}에 도달했습니다."
+
+  - name: mig.quota.rules
+    interval: 1m
+    rules:
+      # MIG 할당량 관련 알람
+      - alert: MIGNamespaceQuotaExceeded
+        expr: mig_namespace_allocated_count > mig_namespace_quota_limit
+        for: 1m
+        labels:
+          severity: warning
+          category: quota
+          component: mig_namespace
+        annotations:
+          summary: "네임스페이스 MIG 할당량 초과"
+          description: "네임스페이스 {{ $labels.namespace }}의 MIG 할당량({{ $labels.mig_namespace_quota_limit }})을 초과하여 {{ $labels.mig_namespace_allocated_count }}개가 할당되었습니다."
+
+      - alert: MIGTeamQuotaExceeded
+        expr: mig_team_allocated_count > mig_team_quota_limit
+        for: 1m
+        labels:
+          severity: warning
+          category: quota
+          component: mig_team
+        annotations:
+          summary: "팀 MIG 할당량 초과"
+          description: "팀 {{ $labels.team_id }}의 MIG 할당량({{ $labels.mig_team_quota_limit }})을 초과하여 {{ $labels.mig_team_allocated_count }}개가 할당되었습니다."
+
+      - alert: MIGQuotaNearLimit
+        expr: (mig_namespace_allocated_count / mig_namespace_quota_limit) > 0.85
+        for: 10m
+        labels:
+          severity: info
+          category: quota
+          component: mig_namespace
+        annotations:
+          summary: "네임스페이스 MIG 할당량 한계 근접"
+          description: "네임스페이스 {{ $labels.namespace }}의 MIG 사용률이 {{ $value | humanizePercentage }}로 할당량 한계에 근접했습니다."
+
+  - name: mig.workload.rules
+    interval: 30s
+    rules:
+      # MIG 워크로드 관련 알람
+      - alert: MIGWorkloadMismatch
+        expr: mig_allocated_memory_gb < mig_requested_memory_gb * 0.8
+        for: 5m
+        labels:
+          severity: warning
+          category: resource
+          component: mig_workload
+        annotations:
+          summary: "MIG 워크로드 리소스 불일치"
+          description: "MIG 인스턴스 {{ $labels.mig_id }}의 할당된 메모리({{ $labels.mig_allocated_memory_gb }}GB)가 요청된 메모리({{ $labels.mig_requested_memory_gb }}GB)보다 20% 이상 부족합니다."
+
+      - alert: MIGWorkloadQueueing
+        expr: mig_workload_queue_length > 5
+        for: 10m
+        labels:
+          severity: warning
+          category: capacity
+          component: mig_workload
+        annotations:
+          summary: "MIG 워크로드 대기열 증가"
+          description: "MIG 워크로드 대기열에 {{ $value }}개의 작업이 10분 이상 대기 중입니다."
+
+      - alert: MIGWorkloadTimeout
+        expr: mig_workload_execution_time_minutes > 120
+        for: 0m
+        labels:
+          severity: info
+          category: performance
+          component: mig_workload
+        annotations:
+          summary: "MIG 워크로드 장시간 실행"
+          description: "MIG 인스턴스 {{ $labels.mig_id }}에서 워크로드가 {{ $value }}분 이상 실행 중입니다."

@@ -1,0 +1,261 @@
+# GPU 알람 규칙 정의
+# GPU 장비의 온도, 사용률, 메모리 등에 대한 알람 설정
+
+groups:
+  - name: gpu.rules
+    interval: 30s
+    rules:
+      # GPU 온도 알람
+      - alert: GPUHighTemperature
+        expr: DCGM_FI_DEV_GPU_TEMP > 85
+        for: 2m
+        labels:
+          severity: critical
+          category: hardware
+          component: gpu
+        annotations:
+          summary: "GPU 과열 상태 감지"
+          description: "GPU {{ $labels.gpu }} (노드: {{ $labels.node }})의 온도가 {{ $value }}°C로 임계값 85°C를 초과했습니다."
+          runbook_url: "https://wiki.company.com/runbooks/gpu-overheating"
+          dashboard_url: "https://grafana.company.com/d/gpu-overview"
+
+      - alert: GPUTemperatureWarning
+        expr: DCGM_FI_DEV_GPU_TEMP > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: hardware
+          component: gpu
+        annotations:
+          summary: "GPU 온도 경고"
+          description: "GPU {{ $labels.gpu }} (노드: {{ $labels.node }})의 온도가 {{ $value }}°C로 경고 임계값 80°C를 초과했습니다."
+
+      # GPU 사용률 알람
+      - alert: GPUHighUtilization
+        expr: DCGM_FI_DEV_GPU_UTIL > 95
+        for: 10m
+        labels:
+          severity: warning
+          category: performance
+          component: gpu
+        annotations:
+          summary: "GPU 높은 사용률 감지"
+          description: "GPU {{ $labels.gpu }} (노드: {{ $labels.node }})의 사용률이 {{ $value }}%로 10분 이상 95%를 초과했습니다."
+
+      - alert: GPULowUtilization
+        expr: DCGM_FI_DEV_GPU_UTIL < 10
+        for: 30m
+        labels:
+          severity: info
+          category: efficiency
+          component: gpu
+        annotations:
+          summary: "GPU 낮은 사용률 감지"
+          description: "GPU {{ $labels.gpu }} (노드: {{ $labels.node }})의 사용률이 {{ $value }}%로 30분 이상 10% 미만입니다."
+
+      # GPU 메모리 알람
+      - alert: GPUHighMemoryUsage
+        expr: (DCGM_FI_DEV_FB_USED / DCGM_FI_DEV_FB_TOTAL) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+          category: resource
+          component: gpu_memory
+        annotations:
+          summary: "GPU 메모리 높은 사용률"
+          description: "GPU {{ $labels.gpu }} (노드: {{ $labels.node }})의 메모리 사용률이 {{ $value }}%로 90%를 초과했습니다."
+
+      - alert: GPUMemoryFull
+        expr: (DCGM_FI_DEV_FB_USED / DCGM_FI_DEV_FB_TOTAL) * 100 > 98
+        for: 1m
+        labels:
+          severity: critical
+          category: resource
+          component: gpu_memory
+        annotations:
+          summary: "GPU 메모리 거의 만료"
+          description: "GPU {{ $labels.gpu }} (노드: {{ $labels.node }})의 메모리 사용률이 {{ $value }}%로 거의 만료 상태입니다."
+
+      # GPU 전력 소모 알람
+      - alert: GPUHighPowerUsage
+        expr: DCGM_FI_DEV_POWER_USAGE > 400
+        for: 5m
+        labels:
+          severity: warning
+          category: power
+          component: gpu
+        annotations:
+          summary: "GPU 높은 전력 소모"
+          description: "GPU {{ $labels.gpu }} (노드: {{ $labels.node }})의 전력 소모가 {{ $value }}W로 400W를 초과했습니다."
+
+      # GPU 오류 상태 알람
+      - alert: GPUXidError
+        expr: increase(DCGM_FI_DEV_XID_ERRORS[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          category: hardware
+          component: gpu
+        annotations:
+          summary: "GPU XID 오류 발생"
+          description: "GPU {{ $labels.gpu }} (노드: {{ $labels.node }})에서 XID 오류가 발생했습니다."
+
+      - alert: GPUECCErrors
+        expr: increase(DCGM_FI_DEV_ECC_SBE_VOL_TOTAL[1h]) > 10
+        for: 0m
+        labels:
+          severity: warning
+          category: hardware
+          component: gpu_memory
+        annotations:
+          summary: "GPU ECC 메모리 오류 증가"
+          description: "GPU {{ $labels.gpu }} (노드: {{ $labels.node }})에서 1시간 동안 {{ $value }}개의 ECC 오류가 발생했습니다."
+
+      # GPU 클럭 속도 알람
+      - alert: GPULowClockSpeed
+        expr: DCGM_FI_DEV_SM_CLOCK < 1000
+        for: 10m
+        labels:
+          severity: info
+          category: performance
+          component: gpu
+        annotations:
+          summary: "GPU 낮은 클럭 속도"
+          description: "GPU {{ $labels.gpu }} (노드: {{ $labels.node }})의 SM 클럭이 {{ $value }}MHz로 10분 이상 1000MHz 미만입니다."
+
+      # GPU 팬 속도 알람
+      - alert: GPUFanSpeedHigh
+        expr: DCGM_FI_DEV_FAN_SPEED > 90
+        for: 10m
+        labels:
+          severity: warning
+          category: hardware
+          component: gpu_cooling
+        annotations:
+          summary: "GPU 팬 속도 높음"
+          description: "GPU {{ $labels.gpu }} (노드: {{ $labels.node }})의 팬 속도가 {{ $value }}%로 10분 이상 90%를 초과했습니다."
+
+      # GPU 연결 상태 알람
+      - alert: GPUDown
+        expr: up{job="dcgm-exporter"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: availability
+          component: gpu
+        annotations:
+          summary: "GPU 메트릭 수집 중단"
+          description: "노드 {{ $labels.node }}의 GPU 메트릭 수집이 중단되었습니다."
+
+      # GPU 가용성 알람
+      - alert: GPUNotAvailable
+        expr: absent(DCGM_FI_DEV_GPU_UTIL{node=~".+"})
+        for: 5m
+        labels:
+          severity: critical
+          category: availability
+          component: gpu
+        annotations:
+          summary: "GPU 메트릭 없음"
+          description: "일부 노드에서 GPU 메트릭이 수집되지 않고 있습니다."
+
+      # GPU 프로세스 수 알람
+      - alert: GPUManyProcesses
+        expr: DCGM_FI_DEV_COMPUTE_PIDS > 20
+        for: 5m
+        labels:
+          severity: warning
+          category: resource
+          component: gpu
+        annotations:
+          summary: "GPU에서 많은 프로세스 실행 중"
+          description: "GPU {{ $labels.gpu }} (노드: {{ $labels.node }})에서 {{ $value }}개의 프로세스가 실행 중입니다."
+
+  - name: gpu.node.rules
+    interval: 30s
+    rules:
+      # 노드별 GPU 집계 알람
+      - alert: NodeManyGPUErrors
+        expr: sum(increase(DCGM_FI_DEV_XID_ERRORS[1h])) by (node) > 5
+        for: 0m
+        labels:
+          severity: critical
+          category: hardware
+          component: node
+        annotations:
+          summary: "노드에서 다수 GPU 오류 발생"
+          description: "노드 {{ $labels.node }}에서 1시간 동안 {{ $value }}개의 GPU 오류가 발생했습니다."
+
+      - alert: NodeHighGPUTemperature
+        expr: avg(DCGM_FI_DEV_GPU_TEMP) by (node) > 82
+        for: 5m
+        labels:
+          severity: warning
+          category: hardware
+          component: node
+        annotations:
+          summary: "노드 GPU 평균 온도 높음"
+          description: "노드 {{ $labels.node }}의 GPU 평균 온도가 {{ $value }}°C입니다."
+
+      - alert: NodeGPUHighPowerConsumption
+        expr: sum(DCGM_FI_DEV_POWER_USAGE) by (node) > 1500
+        for: 10m
+        labels:
+          severity: warning
+          category: power
+          component: node
+        annotations:
+          summary: "노드 높은 GPU 전력 소모"
+          description: "노드 {{ $labels.node }}의 총 GPU 전력 소모가 {{ $value }}W로 1500W를 초과했습니다."
+
+  - name: gpu.allocation.rules
+    interval: 1m
+    rules:
+      # GPU 할당 관련 알람
+      - alert: GPUAllocationStuck
+        expr: increase(gpu_allocation_duration_hours[6h]) == 0 and gpu_allocation_active > 0
+        for: 1h
+        labels:
+          severity: warning
+          category: management
+          component: allocation
+        annotations:
+          summary: "GPU 할당이 중단된 상태"
+          description: "{{ $labels.allocation_id }}가 6시간 이상 활성 상태이지만 사용되지 않고 있습니다."
+
+      - alert: GPUAllocationExpiringSoon
+        expr: gpu_allocation_remaining_hours < 2 and gpu_allocation_remaining_hours > 0
+        for: 0m
+        labels:
+          severity: info
+          category: management
+          component: allocation
+        annotations:
+          summary: "GPU 할당 만료 임박"
+          description: "{{ $labels.allocation_id }}가 {{ $value }}시간 후 만료됩니다."
+
+  - name: gpu.cost.rules
+    interval: 5m
+    rules:
+      # 비용 관련 알람
+      - alert: HighGPUCostPerHour
+        expr: sum(gpu_cost_per_hour) > 100
+        for: 10m
+        labels:
+          severity: warning
+          category: cost
+          component: billing
+        annotations:
+          summary: "높은 GPU 시간당 비용"
+          description: "현재 시간당 GPU 비용이 ${{ $value }}로 $100를 초과했습니다."
+
+      - alert: UnusedGPUCost
+        expr: sum(gpu_cost_per_hour{utilization="low"}) > 20
+        for: 30m
+        labels:
+          severity: info
+          category: cost
+          component: efficiency
+        annotations:
+          summary: "사용되지 않는 GPU 비용 발생"
+          description: "낮은 사용률의 GPU로 인해 시간당 ${{ $value }}의 비용이 발생하고 있습니다."
